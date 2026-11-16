@@ -30,6 +30,8 @@ internal static class Program
         /// trickshot: any sniper, or any weapon that uses heavy ammo.
         /// </summary>
         public bool TrickshotWeapon { get; init; }
+        /// <summary>Raw Fortnite tags of the final kill, shown on hover in Meter Checker.</summary>
+        public string[] WeaponTags { get; init; } = [];
         public string KillerPlatform { get; init; } = "";
         public string VictimPlatform { get; init; } = "";
         public KillDetails? Furthest { get; init; }
@@ -42,7 +44,8 @@ internal static class Program
         string Victim,
         string VictimPlatform,
         string Weapon,
-        string Rarity);
+        string Rarity,
+        string[] WeaponTags);
 
     private static int Main(string[] args)
     {
@@ -142,6 +145,7 @@ internal static class Program
                 reason)
             {
                 TrickshotWeapon = trickshotWeapon,
+                WeaponTags = tags,
                 KillerPlatform = killerPlatform,
                 VictimPlatform = victimPlatform
             };
@@ -172,6 +176,7 @@ internal static class Program
             killer, victim, weaponName, ExtractRarity(tags), shotType, summary)
         {
             TrickshotWeapon = trickshotWeapon,
+            WeaponTags = tags,
             KillerPlatform = killerPlatform,
             VictimPlatform = victimPlatform
         };
@@ -197,7 +202,8 @@ internal static class Program
             ResolvePlayerName(players, best.PlayerId, best.PlayerName),
             ResolvePlatform(players, best.PlayerId, best.PlayerName),
             ExtractWeapon(tags),
-            ExtractRarity(tags));
+            ExtractRarity(tags),
+            tags);
     }
 
     private static PlayerData? FindPlayer(IEnumerable<PlayerData> players, int? id, string? name)
@@ -539,57 +545,107 @@ internal static class Program
         tag.Contains("hunting.rifle", StringComparison.OrdinalIgnoreCase) ||
         tag.Contains("hunting rifle", StringComparison.OrdinalIgnoreCase);
 
+    // Fortnite describes the weapon with gameplay tags such as
+    // "Item.Weapon.Ranged.Assault.Standard" or "Weapon.Ranged.Sniper.Heavy".
+    // The exact prefix varies between tags and seasons, so look for the
+    // "Weapon." segment anywhere in the tag, preferring ranged weapon tags.
+    private static readonly string[] NotWeaponIdentity =
+        ["Ammo", "Damage", "Type", "Event", "Source", "Rarity", "Tier"];
+
     private static string ExtractWeapon(IEnumerable<string> tags)
     {
-        foreach (string tag in tags)
+        string[] list = tags.ToArray();
+        IEnumerable<string> ordered = list
+            .OrderByDescending(tag => tag.Contains("Weapon.Ranged.", StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(tag => tag.Contains("Item.Weapon.", StringComparison.OrdinalIgnoreCase));
+        foreach (string tag in ordered)
         {
-            string[] parts = tag.Split('.', StringSplitOptions.RemoveEmptyEntries);
-            if (tag.StartsWith("Item.Weapon.Ranged.", StringComparison.OrdinalIgnoreCase) && parts.Length >= 4)
-                return PrettyWeapon(parts.Skip(3));
-            if (tag.StartsWith("Weapon.Ranged.", StringComparison.OrdinalIgnoreCase) && parts.Length >= 3)
-                return PrettyWeapon(parts.Skip(2));
+            int at = tag.IndexOf("Weapon.", StringComparison.OrdinalIgnoreCase);
+            if (at < 0) continue;
+            List<string> parts = tag[(at + "Weapon.".Length)..]
+                .Split('.', StringSplitOptions.RemoveEmptyEntries).ToList();
+            if (parts.Count > 0 && parts[0].Equals("Ranged", StringComparison.OrdinalIgnoreCase))
+                parts.RemoveAt(0);
+            if (parts.Count == 0 ||
+                NotWeaponIdentity.Contains(parts[0], StringComparer.OrdinalIgnoreCase))
+                continue;
+            string name = PrettyWeapon(parts);
+            if (name != "Unknown") return name;
         }
 
-        string? sniperTag = tags.FirstOrDefault(IsSniperTag);
+        string? sniperTag = list.FirstOrDefault(IsSniperTag);
         return sniperTag is null
             ? "Unknown"
             : PrettyWeapon(sniperTag.Split('.', StringSplitOptions.RemoveEmptyEntries).TakeLast(2));
     }
 
     private static string Capitalize(string word) =>
-        word.Equals("smg", StringComparison.OrdinalIgnoreCase) || word.Equals("ar", StringComparison.OrdinalIgnoreCase)
+        word.Length <= 3 && word.ToUpperInvariant() is "SMG" or "AR" or "DMR" or "LMG" or "RPG"
             ? word.ToUpperInvariant()
             : char.ToUpperInvariant(word[0]) + word[1..];
 
-    private static readonly string[] WeaponClasses =
-        ["Sniper", "Shotgun", "Pistol", "SMG", "Rifle", "Launcher", "Bow", "Crossbow", "Revolver"];
+    // Tag category -> the name players know. The category comes first in the
+    // tag ("Assault", "Heavy"), players read it last ("Heavy Assault Rifle").
+    private static readonly Dictionary<string, string> WeaponClasses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Assault"] = "Assault Rifle",
+        ["AssaultRifle"] = "Assault Rifle",
+        ["AR"] = "Assault Rifle",
+        ["Sniper"] = "Sniper Rifle",
+        ["SniperRifle"] = "Sniper Rifle",
+        ["Shotgun"] = "Shotgun",
+        ["SMG"] = "SMG",
+        ["Pistol"] = "Pistol",
+        ["DMR"] = "DMR",
+        ["LMG"] = "LMG",
+        ["Rifle"] = "Rifle",
+        ["Launcher"] = "Launcher",
+        ["RocketLauncher"] = "Rocket Launcher",
+        ["Bow"] = "Bow",
+        ["Crossbow"] = "Crossbow",
+        ["Revolver"] = "Revolver",
+        ["Minigun"] = "Minigun",
+        ["Melee"] = "Melee",
+    };
+
+    // Words that end a name that is already complete ("Hunting Rifle", "Hand Cannon").
+    private static readonly string[] SelfNamingEndings =
+        ["Rifle", "Cannon", "Shotgun", "Pistol", "SMG", "Launcher", "Bow", "Crossbow", "Revolver", "Minigun", "Sniper", "DMR"];
+
+    // Words in tags that don't help a player identify the weapon.
+    private static readonly string[] FillerWords =
+        ["Standard", "Default", "Base", "Athena", "Generic", "Weapon", "Item", "Ranged"];
 
     private static readonly string[] RarityWords =
         ["Mythic", "Exotic", "Legendary", "Epic", "Rare", "Uncommon", "Common"];
 
-    // Tag parts are ordered class-first ("Sniper", "Heavy"); players read the
-    // variant first ("Heavy Sniper"). Rarity is shown on its own row.
     private static string PrettyWeapon(IEnumerable<string> parts)
     {
-        List<string> words = parts
+        List<string> segments = parts.ToList();
+        string? className = null;
+        if (segments.Count > 0 && WeaponClasses.TryGetValue(segments[0], out string? mapped))
+        {
+            className = mapped;
+            segments.RemoveAt(0);
+        }
+
+        List<string> words = segments
             .SelectMany(part => System.Text.RegularExpressions.Regex
                 .Replace(part, "(?<=[a-z])(?=[A-Z])", " ")
                 .Split(' ', '_', '-'))
             .Where(word => word.Length > 0 &&
-                           !RarityWords.Contains(word, StringComparer.OrdinalIgnoreCase))
+                           !RarityWords.Contains(word, StringComparer.OrdinalIgnoreCase) &&
+                           !FillerWords.Contains(word, StringComparer.OrdinalIgnoreCase))
             .Select(Capitalize)
             .ToList();
-        if (words.Count == 0) return "Unknown";
-        if (words.Count > 1 && WeaponClasses.Contains(words[0], StringComparer.OrdinalIgnoreCase))
-        {
-            string weaponClass = words[0];
-            words.RemoveAt(0);
-            // "Sniper.HuntingRifle" already names its class: "Hunting Rifle".
-            if (!WeaponClasses.Contains(words[^1], StringComparer.OrdinalIgnoreCase) &&
-                !words[^1].Equals("Cannon", StringComparison.OrdinalIgnoreCase))
-                words.Add(weaponClass);
-        }
-        return string.Join(" ", words);
+
+        if (className is null)
+            return words.Count == 0 ? "Unknown" : string.Join(" ", words);
+        if (words.Count == 0)
+            return className;                              // "Assault.Standard" -> "Assault Rifle"
+        if (SelfNamingEndings.Contains(words[^1], StringComparer.OrdinalIgnoreCase))
+            return string.Join(" ", words);                // "Sniper.HuntingRifle" -> "Hunting Rifle"
+        return string.Join(" ", words) + " " + className;  // "Assault.Heavy" -> "Heavy Assault Rifle"
     }
 
     private static string ExtractRarity(IEnumerable<string> tags)

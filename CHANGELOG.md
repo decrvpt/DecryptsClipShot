@@ -5,6 +5,7 @@
 - ClipShot now tells you when an update is available and installs it with one click (Update now). Turn this off in Settings, or check manually with "Check for updates now".
 - Optional microphone recording (Settings → Audio → Record my microphone) with its own volume. It's mixed by the audio recorder, not the video recorder, so it doesn't cost game FPS like the old microphone option did.
 - The volume slider is now "Game volume" and only affects game sound.
+- Meter Checker shows proper weapon names (for example "Assault Rifle" instead of "Assault Standard") and finds the weapon for more kills. Hover a weapon to see the raw Fortnite tags.
 - Automatic trickshots now count any sniper **or any heavy-ammo weapon** (for example the Hand Cannon or Flint-Knock Pistol) for the final kill of a Victory Royale, not only snipers.
 
 ## 1.0.0

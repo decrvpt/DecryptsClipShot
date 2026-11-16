@@ -1415,6 +1415,14 @@ public partial class MainWindow : Window
         killer.ToolTip = killer.Text;
         victim.ToolTip = victim.Text;
         weapon.Text = Present(JsonText(kill, "weapon", ""));
+        // Hovering the weapon shows the raw Fortnite tags it was read from,
+        // which helps when a new season renames weapons.
+        string[] tags = kill.TryGetProperty("weaponTags", out JsonElement tagList) && tagList.ValueKind == JsonValueKind.Array
+            ? tagList.EnumerateArray().Select(tag => tag.GetString() ?? "").Where(tag => tag.Length > 0).ToArray()
+            : [];
+        weapon.ToolTip = tags.Length == 0
+            ? "The replay didn't include weapon details for this kill."
+            : "Fortnite's weapon tags for this kill:\n" + string.Join("\n", tags);
         string rarityName = Present(JsonText(kill, "rarity", ""));
         rarity.Text = rarityName;
         rarity.Foreground = new SolidColorBrush(RarityColor(rarityName));
