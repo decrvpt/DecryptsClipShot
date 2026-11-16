@@ -145,6 +145,35 @@ Version numbers: `1.0.1` for fixes, `1.1.0` for new features, `2.0.0` for big ch
 
 ---
 
+## Adding new weapons each season
+
+Fortnite replays name weapons by internal codename, not the name players see
+(Usopp's Slingshot is `Slingshot.HarmlessThrift`). ClipShot translates them
+with `local_parser/DecryptsClipShot.ReplayParser/weapons.json`.
+
+When Meter Checker shows only a type like **Pistol** or **Shotgun** for a new
+weapon:
+
+1. Hover the weapon name and note the tag, e.g. `Weapon.Ranged.Shotgun.Brave.Lantern`.
+2. Add an entry to `weapons.json`:
+
+   ```json
+   {
+     "name": "Gilded Dragoon Shotgun",
+     "match": ["Shotgun.Brave.Lantern"],
+     "class": "Shotgun",
+     "ammo": "Shells",
+     "sniper": false,
+     "source": "Seen in a replay, November 2026"
+   }
+   ```
+
+   Set `"ammo": "Heavy"` or `"sniper": true` when the weapon should count for
+   automatic trickshots. Add `"mythicName"` if the Mythic version has its own name.
+3. Add a line to `CHANGELOG.md` and publish a new version as usual.
+
+Fortnite.GG and fndb.gg list each season's weapons with their ammo type.
+
 ## Handy extras
 
 **Check that it builds without publishing anything:** Actions tab → **Release**

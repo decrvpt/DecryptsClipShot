@@ -1420,9 +1420,14 @@ public partial class MainWindow : Window
         string[] tags = kill.TryGetProperty("weaponTags", out JsonElement tagList) && tagList.ValueKind == JsonValueKind.Array
             ? tagList.EnumerateArray().Select(tag => tag.GetString() ?? "").Where(tag => tag.Length > 0).ToArray()
             : [];
+        bool known = kill.TryGetProperty("weaponKnown", out JsonElement knownValue) &&
+                     knownValue.ValueKind == JsonValueKind.True;
+        string header = known
+            ? "Fortnite's weapon tags for this kill:"
+            : "This weapon isn't in ClipShot's weapon list yet, so only its type is shown.\nFortnite's weapon tags for this kill:";
         weapon.ToolTip = tags.Length == 0
             ? "The replay didn't include weapon details for this kill."
-            : "Fortnite's weapon tags for this kill:\n" + string.Join("\n", tags);
+            : header + "\n" + string.Join("\n", tags);
         string rarityName = Present(JsonText(kill, "rarity", ""));
         rarity.Text = rarityName;
         rarity.Foreground = new SolidColorBrush(RarityColor(rarityName));

@@ -32,6 +32,8 @@ internal static class Program
         public bool TrickshotWeapon { get; init; }
         /// <summary>Raw Fortnite tags of the final kill, shown on hover in Meter Checker.</summary>
         public string[] WeaponTags { get; init; } = [];
+        /// <summary>False when the weapon isn't in weapons.json yet (only its class is shown).</summary>
+        public bool WeaponKnown { get; init; }
         public string KillerPlatform { get; init; } = "";
         public string VictimPlatform { get; init; } = "";
         public KillDetails? Furthest { get; init; }
@@ -45,7 +47,8 @@ internal static class Program
         string VictimPlatform,
         string Weapon,
         string Rarity,
-        string[] WeaponTags);
+        string[] WeaponTags,
+        bool WeaponKnown);
 
     private static int Main(string[] args)
     {
@@ -118,12 +121,15 @@ internal static class Program
             : players.FirstOrDefault(player =>
                 string.Equals(player.PlayerName, finalKill.PlayerName, StringComparison.OrdinalIgnoreCase));
         string[] tags = ReadKillTags(finalKill, victimData);
-        bool sniper = tags.Any(IsSniperTag);
+        string rarity = KillRarity(tags, finalKill, victimData);
+        WeaponResult weapon = WeaponCatalog.Resolve(tags, rarity, ReadMember(finalKill, "DeathCause"));
         // Automatic trickshots count any sniper OR any heavy-ammo weapon
-        // (Hand Cannon, Flint-Knock Pistol, ...).
-        bool trickshotWeapon = sniper || tags.Any(IsHeavyAmmoTag);
+        // (Usopp's Slingshot, Flint-Knock Pistol, ...). Known weapons use
+        // weapons.json; unknown ones fall back to tag keywords.
+        bool sniper = weapon.IsSniper || (!weapon.Known && tags.Any(IsSniperTag));
+        bool trickshotWeapon = sniper || weapon.IsHeavyAmmo || (!weapon.Known && tags.Any(IsHeavyAmmoTag));
         double distance = finalKill.Distance ?? 0;
-        string weaponName = ExtractWeapon(tags);
+        string weaponName = weapon.Name;
         string killerPlatform = ResolvePlatform(players, finalKill.FinisherOrDowner, finalKill.FinisherOrDownerName);
         string victimPlatform = ResolvePlatform(players, finalKill.PlayerId, finalKill.PlayerName);
 
@@ -140,19 +146,20 @@ internal static class Program
                         : "The last valid elimination was not the replay owner's sniper or heavy-ammo kill.";
 
             return new LocalReplayResult(true, placement, false, sniper,
-                distance, killer, victim, weaponName, ExtractRarity(tags),
+                distance, killer, victim, weaponName, rarity,
                 sniper ? "Sniper" : trickshotWeapon ? "HeavyAmmo" : "Other",
                 reason)
             {
                 TrickshotWeapon = trickshotWeapon,
                 WeaponTags = tags,
+                WeaponKnown = weapon.Known,
                 KillerPlatform = killerPlatform,
                 VictimPlatform = victimPlatform
             };
         }
 
-        if (tags.Length == 0)
-            return Inconclusive("The final elimination did not contain weapon tags.", placement);
+        if (tags.Length == 0 && weapon.Name == "Unknown")
+            return Inconclusive("The final elimination did not contain weapon details.", placement);
 
         if (trickshotWeapon && distance <= 0)
             return Inconclusive($"The final {weaponName} elimination did not contain a usable distance.", placement);
@@ -173,10 +180,11 @@ internal static class Program
                   $"{distance / 100.0:F1} meters ({ownerResolution}).";
 
         return new LocalReplayResult(true, placement, true, sniper, distance,
-            killer, victim, weaponName, ExtractRarity(tags), shotType, summary)
+            killer, victim, weaponName, rarity, shotType, summary)
         {
             TrickshotWeapon = trickshotWeapon,
             WeaponTags = tags,
+            WeaponKnown = weapon.Known,
             KillerPlatform = killerPlatform,
             VictimPlatform = victimPlatform
         };
@@ -195,15 +203,18 @@ internal static class Program
 
         PlayerData? victimData = FindPlayer(players, best.PlayerId, best.PlayerName);
         string[] tags = ReadKillTags(best, victimData);
+        string rarity = KillRarity(tags, best, victimData);
+        WeaponResult weapon = WeaponCatalog.Resolve(tags, rarity, ReadMember(best, "DeathCause"));
         return new KillDetails(
             best.Distance ?? 0,
             ResolvePlayerName(players, best.FinisherOrDowner, best.FinisherOrDownerName),
             ResolvePlatform(players, best.FinisherOrDowner, best.FinisherOrDownerName),
             ResolvePlayerName(players, best.PlayerId, best.PlayerName),
             ResolvePlatform(players, best.PlayerId, best.PlayerName),
-            ExtractWeapon(tags),
-            ExtractRarity(tags),
-            tags);
+            weapon.Name,
+            rarity,
+            tags,
+            weapon.Known);
     }
 
     private static PlayerData? FindPlayer(IEnumerable<PlayerData> players, int? id, string? name)
@@ -313,16 +324,30 @@ internal static class Program
                    StringComparison.OrdinalIgnoreCase);
     }
 
+    // The kill's own tags (the hit that killed) describe the weapon. The
+    // victim's DeathTags can include unrelated status tags, so they are only
+    // used when the kill carries no tags at all.
     private static string[] ReadKillTags(KillFeedEntry entry, PlayerData? victim)
     {
-        IEnumerable<string> deathTags = entry.DeathTags ?? [];
-        IEnumerable<string> finisherTags = ReadStringValues(ReadMember(entry, "FinisherOrDownerTags"));
-        IEnumerable<string> victimTags = victim?.DeathTags ?? [];
+        string[] killerSide = Clean((entry.DeathTags ?? [])
+            .Concat(ReadStringValues(ReadMember(entry, "FinisherOrDownerTags"))));
+        return killerSide.Length > 0 ? killerSide : Clean(victim?.DeathTags ?? []);
+    }
 
-        return deathTags.Concat(finisherTags).Concat(victimTags)
-            .Where(tag => !string.IsNullOrWhiteSpace(tag))
+    private static string[] ReadAllTags(KillFeedEntry entry, PlayerData? victim) =>
+        Clean((entry.DeathTags ?? [])
+            .Concat(ReadStringValues(ReadMember(entry, "FinisherOrDownerTags")))
+            .Concat(victim?.DeathTags ?? []));
+
+    private static string[] Clean(IEnumerable<string> tags) =>
+        tags.Where(tag => !string.IsNullOrWhiteSpace(tag))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+
+    private static string KillRarity(string[] tags, KillFeedEntry entry, PlayerData? victim)
+    {
+        string rarity = ExtractRarity(tags);
+        return rarity != "Unknown" ? rarity : ExtractRarity(ReadAllTags(entry, victim));
     }
 
     private static IEnumerable<string> ReadStringValues(object? value)
@@ -544,109 +569,6 @@ internal static class Program
         tag.Contains("huntingrifle", StringComparison.OrdinalIgnoreCase) ||
         tag.Contains("hunting.rifle", StringComparison.OrdinalIgnoreCase) ||
         tag.Contains("hunting rifle", StringComparison.OrdinalIgnoreCase);
-
-    // Fortnite describes the weapon with gameplay tags such as
-    // "Item.Weapon.Ranged.Assault.Standard" or "Weapon.Ranged.Sniper.Heavy".
-    // The exact prefix varies between tags and seasons, so look for the
-    // "Weapon." segment anywhere in the tag, preferring ranged weapon tags.
-    private static readonly string[] NotWeaponIdentity =
-        ["Ammo", "Damage", "Type", "Event", "Source", "Rarity", "Tier"];
-
-    private static string ExtractWeapon(IEnumerable<string> tags)
-    {
-        string[] list = tags.ToArray();
-        IEnumerable<string> ordered = list
-            .OrderByDescending(tag => tag.Contains("Weapon.Ranged.", StringComparison.OrdinalIgnoreCase))
-            .ThenByDescending(tag => tag.Contains("Item.Weapon.", StringComparison.OrdinalIgnoreCase));
-        foreach (string tag in ordered)
-        {
-            int at = tag.IndexOf("Weapon.", StringComparison.OrdinalIgnoreCase);
-            if (at < 0) continue;
-            List<string> parts = tag[(at + "Weapon.".Length)..]
-                .Split('.', StringSplitOptions.RemoveEmptyEntries).ToList();
-            if (parts.Count > 0 && parts[0].Equals("Ranged", StringComparison.OrdinalIgnoreCase))
-                parts.RemoveAt(0);
-            if (parts.Count == 0 ||
-                NotWeaponIdentity.Contains(parts[0], StringComparer.OrdinalIgnoreCase))
-                continue;
-            string name = PrettyWeapon(parts);
-            if (name != "Unknown") return name;
-        }
-
-        string? sniperTag = list.FirstOrDefault(IsSniperTag);
-        return sniperTag is null
-            ? "Unknown"
-            : PrettyWeapon(sniperTag.Split('.', StringSplitOptions.RemoveEmptyEntries).TakeLast(2));
-    }
-
-    private static string Capitalize(string word) =>
-        word.Length <= 3 && word.ToUpperInvariant() is "SMG" or "AR" or "DMR" or "LMG" or "RPG"
-            ? word.ToUpperInvariant()
-            : char.ToUpperInvariant(word[0]) + word[1..];
-
-    // Tag category -> the name players know. The category comes first in the
-    // tag ("Assault", "Heavy"), players read it last ("Heavy Assault Rifle").
-    private static readonly Dictionary<string, string> WeaponClasses = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["Assault"] = "Assault Rifle",
-        ["AssaultRifle"] = "Assault Rifle",
-        ["AR"] = "Assault Rifle",
-        ["Sniper"] = "Sniper Rifle",
-        ["SniperRifle"] = "Sniper Rifle",
-        ["Shotgun"] = "Shotgun",
-        ["SMG"] = "SMG",
-        ["Pistol"] = "Pistol",
-        ["DMR"] = "DMR",
-        ["LMG"] = "LMG",
-        ["Rifle"] = "Rifle",
-        ["Launcher"] = "Launcher",
-        ["RocketLauncher"] = "Rocket Launcher",
-        ["Bow"] = "Bow",
-        ["Crossbow"] = "Crossbow",
-        ["Revolver"] = "Revolver",
-        ["Minigun"] = "Minigun",
-        ["Melee"] = "Melee",
-    };
-
-    // Words that end a name that is already complete ("Hunting Rifle", "Hand Cannon").
-    private static readonly string[] SelfNamingEndings =
-        ["Rifle", "Cannon", "Shotgun", "Pistol", "SMG", "Launcher", "Bow", "Crossbow", "Revolver", "Minigun", "Sniper", "DMR"];
-
-    // Words in tags that don't help a player identify the weapon.
-    private static readonly string[] FillerWords =
-        ["Standard", "Default", "Base", "Athena", "Generic", "Weapon", "Item", "Ranged"];
-
-    private static readonly string[] RarityWords =
-        ["Mythic", "Exotic", "Legendary", "Epic", "Rare", "Uncommon", "Common"];
-
-    private static string PrettyWeapon(IEnumerable<string> parts)
-    {
-        List<string> segments = parts.ToList();
-        string? className = null;
-        if (segments.Count > 0 && WeaponClasses.TryGetValue(segments[0], out string? mapped))
-        {
-            className = mapped;
-            segments.RemoveAt(0);
-        }
-
-        List<string> words = segments
-            .SelectMany(part => System.Text.RegularExpressions.Regex
-                .Replace(part, "(?<=[a-z])(?=[A-Z])", " ")
-                .Split(' ', '_', '-'))
-            .Where(word => word.Length > 0 &&
-                           !RarityWords.Contains(word, StringComparer.OrdinalIgnoreCase) &&
-                           !FillerWords.Contains(word, StringComparer.OrdinalIgnoreCase))
-            .Select(Capitalize)
-            .ToList();
-
-        if (className is null)
-            return words.Count == 0 ? "Unknown" : string.Join(" ", words);
-        if (words.Count == 0)
-            return className;                              // "Assault.Standard" -> "Assault Rifle"
-        if (SelfNamingEndings.Contains(words[^1], StringComparer.OrdinalIgnoreCase))
-            return string.Join(" ", words);                // "Sniper.HuntingRifle" -> "Hunting Rifle"
-        return string.Join(" ", words) + " " + className;  // "Assault.Heavy" -> "Heavy Assault Rifle"
-    }
 
     private static string ExtractRarity(IEnumerable<string> tags)
     {

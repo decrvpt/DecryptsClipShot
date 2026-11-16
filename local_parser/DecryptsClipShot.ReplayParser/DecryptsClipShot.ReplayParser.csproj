@@ -8,6 +8,10 @@
     <RootNamespace>DecryptsClipShot.ReplayParser</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Weapon codename → display name table. Edit this each season. -->
+    <EmbeddedResource Include="weapons.json" LogicalName="weapons.json" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="FortniteReplayReader" Version="3.0.1" />
   </ItemGroup>
 </Project>
