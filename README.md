@@ -10,7 +10,7 @@ No OBS, accounts, API keys or subscriptions.
 
 - If Windows says "Windows protected your PC", click **More info → Run anyway**. This appears because the download isn't code-signed yet.
 - No administrator password is needed. ClipShot installs for your Windows account only.
-- To update, download and open the newest setup, then click **Update**. Your clips and settings stay.
+- **Updates:** when a new version is out, ClipShot shows an **Update available** popup when it opens. Click **Update now** and it updates itself. Your clips and settings stay. You can also check in Settings → **Check for updates now**.
 - To fix or remove ClipShot, run the setup again and choose **Fix ClipShot** or **Remove ClipShot**. You can also remove it from Windows Settings → Apps. Your saved clips are never deleted.
 
 **Requirements:** Windows 10 or 11 (64-bit). An NVIDIA, AMD or Intel graphics card gives the smoothest gameplay while recording.

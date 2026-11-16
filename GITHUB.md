@@ -112,17 +112,34 @@ git push
 ```
 
 That only saves the code on GitHub; players won't see anything yet. When you
-want players to get it, publish a new version. The number must be higher than
-the last one:
+want players to get it, publish a new version:
 
-```cmd
-git tag v1.0.1
-git push origin v1.0.1
-```
+1. Add a section at the top of `CHANGELOG.md` for the new version, written for
+   players. **This text is shown in ClipShot's "Update available" popup** and
+   on the release page:
 
-GitHub builds `1.0.1`, publishes it, and the download link above serves it
-automatically. Players who already have ClipShot just run the new setup. It
-says **Update available**, and their clips and settings are kept.
+   ```markdown
+   ## 1.0.2
+
+   - Fixed clips sometimes missing the last second.
+   - New: choose where the Activity log is saved.
+   ```
+
+2. Commit it, then tag the same version number (it must be higher than the last one):
+
+   ```cmd
+   git add .
+   git commit -m "Release 1.0.2"
+   git push
+   git tag v1.0.2
+   git push origin v1.0.2
+   ```
+
+GitHub builds `1.0.2` and publishes it. Every installed copy of ClipShot (1.0.1
+or newer) shows an **Update available** popup the next time it opens. Players
+click **Update now** and ClipShot downloads the new setup, closes, updates and
+offers to reopen. If ClipShot is minimized to the tray, a notification appears
+instead. The download link also always serves the newest version.
 
 Version numbers: `1.0.1` for fixes, `1.1.0` for new features, `2.0.0` for big changes.
 

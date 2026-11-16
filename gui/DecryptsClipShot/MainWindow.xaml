@@ -485,6 +485,12 @@
                                     <CheckBox x:Name="KeepRejectedCheck" Content="Keep clips that do not qualify" Foreground="White" Margin="0,4"/>
                                     <CheckBox x:Name="MinimizeToTrayCheck" Content="Minimize ClipShot to the system tray" Foreground="White" Margin="0,8,0,4"/>
                                     <TextBlock Text="When enabled, the minimize button hides ClipShot while capture continues. Double-click the tray icon to restore it." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="22,0,0,0" TextWrapping="Wrap"/>
+                                    <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,16,0,14"/>
+                                    <CheckBox x:Name="UpdatesCheck" Content="Check for updates when ClipShot opens" Foreground="White" Margin="0,0,0,10"/>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button x:Name="CheckUpdatesButton" Content="Check for updates now" Style="{StaticResource SecondaryButton}" Click="CheckUpdates_Click"/>
+                                        <TextBlock x:Name="AppVersionText" Text="Version 1.0.0" Foreground="{StaticResource MutedBrush}" FontSize="12" VerticalAlignment="Center" Margin="14,0,0,0"/>
+                                    </StackPanel>
                                 </StackPanel>
                             </Border>
                             <!-- Advanced: technical settings most players never need. -->

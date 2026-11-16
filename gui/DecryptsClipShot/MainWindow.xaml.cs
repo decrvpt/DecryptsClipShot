@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -84,6 +85,12 @@ public partial class MainWindow : Window
             Loaded += (_, _) => Dispatcher.BeginInvoke(new Action(HideToTray), DispatcherPriority.ApplicationIdle);
         }
         Loaded += async (_, _) => await RefreshAudioDevicesAsync(false);
+        // Look for a newer release a few seconds after opening, so startup stays fast.
+        Loaded += async (_, _) =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(4));
+            await CheckForUpdatesAsync(manual: false);
+        };
         _ = RefreshClipsAsync();
         SetStatus("Engine offline", false, false);
         AddActivity("ClipShot is ready");
@@ -234,6 +241,8 @@ public partial class MainWindow : Window
         LocalReplayCheck.IsChecked = ReadIni("local_replay", "enabled", "1") == "1";
         KeepRejectedCheck.IsChecked = ReadIni("app", "keep_rejected_clips", "1") == "1";
         MinimizeToTrayCheck.IsChecked = ReadIni("app", "minimize_to_tray", "0") == "1";
+        UpdatesCheck.IsChecked = ReadIni("app", "check_for_updates", "1") == "1";
+        AppVersionText.Text = $"Version {UpdateChecker.CurrentVersion}";
 
         string encoder = ReadIni("recording", "video_encoder", "libx264");
         EncoderBox.SelectedIndex = encoder switch
@@ -770,6 +779,7 @@ public partial class MainWindow : Window
         WriteIni("local_replay", "enabled", LocalReplayCheck.IsChecked == true ? "1" : "0");
         WriteIni("app", "keep_rejected_clips", KeepRejectedCheck.IsChecked == true ? "1" : "0");
         WriteIni("app", "minimize_to_tray", MinimizeToTrayCheck.IsChecked == true ? "1" : "0");
+        WriteIni("app", "check_for_updates", UpdatesCheck.IsChecked == true ? "1" : "0");
         if (_settingsWriteFailed)
         {
             MessageBox.Show($"ClipShot could not save settings to:\n{IniPath}", "Settings were not saved", MessageBoxButton.OK, MessageBoxImage.Error);
@@ -1516,6 +1526,12 @@ public partial class MainWindow : Window
             Visible = false
         };
         _trayIcon.DoubleClick += (_, _) => Dispatcher.Invoke(RestoreFromTray);
+        _trayIcon.BalloonTipClicked += (_, _) => Dispatcher.Invoke(async () =>
+        {
+            if (_pendingUpdate is null) return;
+            RestoreFromTray();
+            await ShowUpdatePopupAsync(_pendingUpdate);
+        });
     }
 
     private void HideToTray()
@@ -1555,6 +1571,104 @@ public partial class MainWindow : Window
     }
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
+
+    // ===== Updates =====
+
+    private bool _checkingForUpdates;
+    private UpdateInfo? _pendingUpdate;
+
+    private async void CheckUpdates_Click(object sender, RoutedEventArgs e) => await CheckForUpdatesAsync(manual: true);
+
+    private async Task CheckForUpdatesAsync(bool manual)
+    {
+        if (_checkingForUpdates) return;
+        if (!manual && ReadIni("app", "check_for_updates", "1") == "0") return;
+        _checkingForUpdates = true;
+        CheckUpdatesButton.IsEnabled = false;
+        try
+        {
+            UpdateInfo? update;
+            try
+            {
+                update = await UpdateChecker.CheckAsync();
+            }
+            catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
+            {
+                if (manual)
+                    MessageBox.Show(this, "ClipShot couldn't check for updates. Check your internet connection and try again.",
+                        "Check for updates", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            if (update is null)
+            {
+                if (manual)
+                    MessageBox.Show(this, $"You're up to date (version {UpdateChecker.CurrentVersion}).",
+                        "Check for updates", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            // Respect "Skip this version" for automatic checks only.
+            if (!manual && ReadIni("app", "skipped_version", "") == update.Version.ToString()) return;
+
+            AddActivity($"Update available: ClipShot {update.Version}");
+            if (!IsVisible && _trayIcon is { Visible: true })
+            {
+                // ClipShot is in the tray: don't pop a window over the game.
+                _pendingUpdate = update;
+                _trayIcon.ShowBalloonTip(6000, "ClipShot update available",
+                    $"Version {update.Version} is ready. Click here to update.", System.Windows.Forms.ToolTipIcon.Info);
+                return;
+            }
+            await ShowUpdatePopupAsync(update);
+        }
+        finally
+        {
+            _checkingForUpdates = false;
+            CheckUpdatesButton.IsEnabled = true;
+        }
+    }
+
+    private async Task ShowUpdatePopupAsync(UpdateInfo update)
+    {
+        _pendingUpdate = null;
+        var popup = new UpdateWindow(update, _captureActive) { Owner = this };
+        bool? accepted = popup.ShowDialog();
+        if (popup.SkipThisVersion) WriteIni("app", "skipped_version", update.Version.ToString());
+        if (accepted != true || popup.DownloadedSetup is null) return;
+
+        // Stop recording cleanly, then hand over to the new setup, which
+        // updates in place and offers to reopen ClipShot when it's done.
+        if (_engine is { HasExited: false } engine)
+        {
+            _stoppingEngine = true;
+            SignalEvent(StopEventName);
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                await engine.WaitForExitAsync(timeout.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                try { engine.Kill(entireProcessTree: true); } catch { }
+            }
+        }
+        try
+        {
+            Process.Start(new ProcessStartInfo(popup.DownloadedSetup, "--update") { UseShellExecute = true });
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(this, $"The update couldn't start: {exception.Message}", "Update",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        if (_trayIcon is not null)
+        {
+            _trayIcon.Visible = false;
+            _trayIcon.Dispose();
+        }
+        System.Windows.Application.Current.Shutdown();
+    }
 
     private void CleanupOrphanedBundledFfmpeg()
     {

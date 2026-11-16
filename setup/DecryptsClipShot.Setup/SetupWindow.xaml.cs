@@ -80,6 +80,13 @@ public partial class SetupWindow : Window
         _prepared = true;
         PreparingText.Visibility = Visibility.Collapsed;
         ConfigureMode();
+
+        // Started by ClipShot's "Update now" button: the player already chose
+        // to update, so go straight to it.
+        if (_mode == Mode.Update &&
+            Environment.GetCommandLineArgs().Skip(1).Any(argument =>
+                argument.Equals("--update", StringComparison.OrdinalIgnoreCase)))
+            await RunOperation(Operation.Update);
     }
 
     /// <summary>Unpacks the MSI carried inside this setup and checks for an existing install.</summary>
