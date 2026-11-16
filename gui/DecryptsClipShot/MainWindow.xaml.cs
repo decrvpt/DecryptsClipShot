@@ -29,6 +29,8 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<ClipItem> _otherClips = [];
     private readonly ObservableCollection<ClipItem> _recentClips = [];
     private readonly ObservableCollection<string> _outputDevices = [];
+    private readonly ObservableCollection<string> _microphones = [];
+    private const string DefaultMicrophone = "Default microphone";
     private readonly DispatcherTimer _timer;
     private Process? _engine;
     private DateTime? _captureStarted;
@@ -65,6 +67,7 @@ public partial class MainWindow : Window
         OtherClipsList.ItemsSource = _otherClips;
         RecentClipsList.ItemsSource = _recentClips;
         GameAudioDeviceBox.ItemsSource = _outputDevices;
+        MicrophoneDeviceBox.ItemsSource = _microphones;
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _timer.Tick += Timer_Tick;
         _timer.Start();
@@ -217,6 +220,14 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(gameDevice)) gameDevice = DefaultOutputDevice;
         _outputDevices.Add(gameDevice);
         GameAudioDeviceBox.Text = gameDevice;
+        MicrophoneCheck.IsChecked = ReadIni("recording", "capture_microphone", "0") == "1";
+        string microphone = ReadIni("recording", "microphone_device", DefaultMicrophone);
+        if (string.IsNullOrWhiteSpace(microphone)) microphone = DefaultMicrophone;
+        _microphones.Add(microphone);
+        MicrophoneDeviceBox.Text = microphone;
+        MicVolumeSlider.Value = int.TryParse(ReadIni("recording", "microphone_volume", "100"), out int micVolume)
+            ? Math.Clamp(micVolume, 0, 200)
+            : 100;
         HotkeyBox.Text = ReadIni("controls", "manual_clip_hotkey", "F8");
         HotkeyHintText.Text = $"{HotkeyBox.Text} saves a clip";
         FortniteOnlyCheck.IsChecked = ReadIni("app", "start_only_with_fortnite", "1") == "1";
@@ -586,6 +597,8 @@ public partial class MainWindow : Window
             PostMatchValueText.Text = PostMatchSlider.Value == 0 ? "Off" : $"{(int)PostMatchSlider.Value} seconds";
         if (VolumeValueText is not null && VolumeSlider is not null)
             VolumeValueText.Text = VolumeSlider.Value == 0 ? "Muted" : $"{(int)VolumeSlider.Value}%";
+        if (MicVolumeValueText is not null && MicVolumeSlider is not null)
+            MicVolumeValueText.Text = MicVolumeSlider.Value == 0 ? "Muted" : $"{(int)MicVolumeSlider.Value}%";
     }
 
     private void AdvancedToggle_Click(object sender, RoutedEventArgs e)
@@ -745,6 +758,10 @@ public partial class MainWindow : Window
         WriteIni("recording", "capture_game_audio", GameAudioCheck.IsChecked == true ? "1" : "0");
         WriteIni("recording", "game_audio_device", GameAudioDeviceBox.Text.Trim());
         WriteIni("recording", "game_audio_volume", ((int)VolumeSlider.Value).ToString(CultureInfo.InvariantCulture));
+        WriteIni("recording", "capture_microphone", MicrophoneCheck.IsChecked == true ? "1" : "0");
+        WriteIni("recording", "microphone_device",
+            string.IsNullOrWhiteSpace(MicrophoneDeviceBox.Text) ? DefaultMicrophone : MicrophoneDeviceBox.Text.Trim());
+        WriteIni("recording", "microphone_volume", ((int)MicVolumeSlider.Value).ToString(CultureInfo.InvariantCulture));
         WriteIni("recording", "audio_helper_path", "ClipShotAudio.exe");
         WriteIni("folders", "clips", clipsFolder);
         WriteIni("controls", "manual_clip_hotkey", HotkeyBox.Text.Trim());
@@ -922,6 +939,7 @@ public partial class MainWindow : Window
     private async Task RefreshAudioDevicesAsync(bool showResult)
     {
         string gameSelection = GameAudioDeviceBox.Text;
+        string micSelection = MicrophoneDeviceBox.Text;
         AudioDeviceStatusText.Text = "Scanning Windows playback devices...";
         AudioDeviceScan detected;
 
@@ -949,18 +967,29 @@ public partial class MainWindow : Window
         else
             GameAudioDeviceBox.Text = DefaultOutputDevice;
 
+        _microphones.Clear();
+        _microphones.Add(DefaultMicrophone);
+        foreach (string device in detected.Microphones)
+            if (!_microphones.Contains(device, StringComparer.OrdinalIgnoreCase))
+                _microphones.Add(device);
+        MicrophoneDeviceBox.Text =
+            !string.IsNullOrWhiteSpace(micSelection) && _microphones.Contains(micSelection, StringComparer.OrdinalIgnoreCase)
+                ? micSelection
+                : DefaultMicrophone;
+
         string outputName = string.IsNullOrWhiteSpace(detected.DefaultOutput)
             ? "the Windows default output"
             : detected.DefaultOutput;
         AudioDeviceStatusText.Text =
-            $"Game audio will follow: {outputName}. No Stereo Mix or virtual cable is required.";
+            $"Game sound follows: {outputName}." +
+            (detected.Microphones.Count == 0 ? " No microphone was found." : "");
 
         if (showResult)
             MessageBox.Show(AudioDeviceStatusText.Text,
                 "Audio devices", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
-    private sealed record AudioDeviceScan(string DefaultOutput, List<string> Outputs);
+    private sealed record AudioDeviceScan(string DefaultOutput, List<string> Outputs, List<string> Microphones);
 
     private async Task<AudioDeviceScan> DetectAudioDevicesAsync()
     {
@@ -993,7 +1022,8 @@ public partial class MainWindow : Window
                 : [];
         return new AudioDeviceScan(
             root.TryGetProperty("defaultOutput", out JsonElement output) ? output.GetString() ?? "" : "",
-            Names(root, "outputs"));
+            Names(root, "outputs"),
+            Names(root, "microphones"));
     }
 
     private async void RefreshAudioDevices_Click(object sender, RoutedEventArgs e)

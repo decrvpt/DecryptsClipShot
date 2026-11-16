@@ -1,6 +1,6 @@
 # Decrypt's ClipShot
 
-A Windows clipping app made for Fortnite. ClipShot keeps the last few minutes of your game ready to save. Press **F8** after a great moment, and Victory Royale sniper trickshots are clipped automatically and titled with their distance.
+A Windows clipping app made for Fortnite. ClipShot keeps the last few minutes of your game ready to save. Press **F8** after a great moment, and when you win with a sniper or heavy-ammo shot, the trickshot is clipped automatically and titled with its distance.
 
 No OBS, accounts, API keys or subscriptions.
 
@@ -28,7 +28,7 @@ Fortnite in **Borderless Windowed** mode works best.
 
 Clips are saved in your **Videos** folder, under **Decrypt's ClipShot**. In the app, **My Clips** shows them in two groups:
 
-- **Trickshots**: your Victory Royale final kills with a sniper, titled with the distance (for example `184m_2026-09-01_19-47-36.mp4`).
+- **Trickshots**: Victory Royales where your final kill used any sniper or any heavy-ammo weapon (such as the Hand Cannon), titled with the distance (for example `184m_2026-09-01_19-47-36.mp4`).
 - **All clips**: everything you saved with F8, and automatic clips that didn't qualify as trickshots.
 
 Double-click a clip to watch it. Select one and click **Rename** to rename it. You can choose another folder in **Settings → Storage**.
@@ -50,7 +50,8 @@ Most players only need **Optimize for my PC**. The main options are:
 | Resolution | Full, 1080p or 720p | 1080p |
 | Clip length | How much is saved when you press the shortcut | 90 seconds |
 | After a win, keep recording for | Extra footage after a Victory Royale | 15 seconds |
-| Clip volume | Game sound level in saved clips | 100% |
+| Game volume | Game sound level in saved clips | 100% |
+| Record my microphone | Adds your voice to clips, with its own volume | Off |
 | Clip shortcut | The key that saves a clip | F8 |
 
 Technical options (encoder, FFmpeg, buffer size) are under **Show advanced settings**.
@@ -63,6 +64,8 @@ Technical options (encoder, FFmpeg, buffer size) are under **Show advanced setti
 
 **No sound in clips.** In Settings → Audio, turn on **Record game sound** and choose **Default Windows output**. If your game sound plays through a different headset or speaker, pick that device.
 
+**My voice isn't in clips.** Turn on **Record my microphone** in Settings → Audio, pick your mic, save, then stop and start ClipShot. If it still doesn't work, open Windows **Settings → Privacy & security → Microphone** and turn on **Let desktop apps access your microphone**.
+
 **An automatic clip stays in Pending.** ClipShot saved the video but couldn't confirm a trickshot from the replay, so it kept the clip to be safe. Make sure **Record Replays** is on in Fortnite. The Activity panel shows the reason.
 
 **Something else is wrong.** Run the setup again and choose **Fix ClipShot**. Settings are stored in `%LOCALAPPDATA%\Decrypts ClipShot\trickclip.ini`. Deleting that file resets every setting.
@@ -71,7 +74,7 @@ Technical options (encoder, FFmpeg, buffer size) are under **Show advanced setti
 
 - Replays are analyzed on your PC and never uploaded.
 - ClipShot doesn't inject into Fortnite or read its memory. It records your screen and game sound like any screen recorder.
-- No microphone is recorded.
+- Your microphone is only recorded if you turn on **Record my microphone** in Settings → Audio.
 
 ---
 

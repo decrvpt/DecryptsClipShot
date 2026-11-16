@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1
+
+- Optional microphone recording (Settings → Audio → Record my microphone) with its own volume. It's mixed by the audio recorder, not the video recorder, so it doesn't cost game FPS like the old microphone option did.
+- The volume slider is now "Game volume" and only affects game sound.
+- Automatic trickshots now count any sniper **or any heavy-ammo weapon** (for example the Hand Cannon or Flint-Knock Pistol) for the final kill of a Victory Royale, not only snipers.
+
 ## 1.0.0
 
 First public release.

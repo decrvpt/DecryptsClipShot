@@ -74,6 +74,9 @@ typedef struct {
     int prioritize_game;
     int av_sync_offset_ms;
     int game_audio_volume;
+    int capture_microphone;
+    int microphone_volume;
+    wchar_t microphone_device[512];
 } AppConfig;
 
 /* Reads FFmpeg's -progress output on a background thread and compares the
@@ -134,6 +137,7 @@ typedef struct {
     int placement;
     int has_kill;
     int sniper;
+    int trickshot_weapon; /* any sniper or heavy-ammo weapon */
     double distance_uu;
     char killer[128];
     char victim[128];
@@ -279,6 +283,15 @@ static void load_config(AppConfig *config)
     config->av_sync_offset_ms = load_ini_int(ini, L"recording", L"av_sync_offset_ms", 0);
     /* Clip volume slider in Settings → Audio, in percent (100 = as heard in game). */
     config->game_audio_volume = load_ini_int(ini, L"recording", L"game_audio_volume", 100);
+    /* Microphone is off unless the player turns it on in Settings → Audio.
+       It is mixed into the audio track by ClipShotAudio, never by the video
+       FFmpeg, so it can't cost game FPS. */
+    config->capture_microphone = load_ini_int(ini, L"recording", L"capture_microphone", 0);
+    config->microphone_volume = load_ini_int(ini, L"recording", L"microphone_volume", 100);
+    load_ini_string(ini, L"recording", L"microphone_device", L"Default microphone",
+                    config->microphone_device, ARRAY_COUNT(config->microphone_device));
+    if (!config->microphone_device[0])
+        wcscpy_s(config->microphone_device, ARRAY_COUNT(config->microphone_device), L"Default microphone");
 
     load_ini_string(ini, L"recording", L"ffmpeg_path", L"ffmpeg.exe",
                     relative, ARRAY_COUNT(relative));
@@ -349,6 +362,8 @@ static void load_config(AppConfig *config)
     if (config->av_sync_offset_ms > 2000) config->av_sync_offset_ms = 2000;
     if (config->game_audio_volume < 0) config->game_audio_volume = 0;
     if (config->game_audio_volume > 200) config->game_audio_volume = 200;
+    if (config->microphone_volume < 0) config->microphone_volume = 0;
+    if (config->microphone_volume > 200) config->microphone_volume = 200;
 }
 
 static int video_wrap_count(const AppConfig *config)
@@ -693,9 +708,20 @@ static int start_audio_helper(Recorder *recorder, const AppConfig *config,
         return 0;
     }
 
+    /* Volumes are applied in the helper, so the clip-volume slider changes
+       game sound only and the microphone has its own level. With game audio
+       turned off but the microphone on, game sound is captured at 0% so the
+       loopback stream still provides the steady clock. */
     swprintf_s(command, ARRAY_COUNT(command),
-               L"\"%ls\" --mode %ls --device \"%ls\" --pipe \"%ls\"",
-               config->audio_helper_path, mode, device, pipe_name);
+               L"\"%ls\" --mode %ls --device \"%ls\" --pipe \"%ls\" --game-volume %d",
+               config->audio_helper_path, mode, device, pipe_name,
+               config->capture_game_audio ? config->game_audio_volume : 0);
+    if (config->capture_microphone) {
+        size_t used = wcslen(command);
+        swprintf_s(command + used, ARRAY_COUNT(command) - used,
+                   L" --mic \"%ls\" --mic-volume %d",
+                   config->microphone_device, config->microphone_volume);
+    }
     ZeroMemory(&startup, sizeof(startup));
     ZeroMemory(&process, sizeof(process));
     startup.cb = sizeof(startup);
@@ -917,7 +943,7 @@ static int recorder_start_backend(Recorder *recorder, const AppConfig *config, i
 
     /* Audio is deliberately recorded by a separate FFmpeg process. Keeping it
        out of the live video mux removes audio timing from the proven video path. */
-    recorder->audio_wanted = config->capture_game_audio && config->game_audio_device[0];
+    recorder->audio_wanted = config->capture_game_audio || config->capture_microphone;
     recorder->audio_failed_tick = 0;
     if (recorder->audio_wanted && start_audio_chain(recorder, config))
         game_audio_recording = 1;
@@ -1065,7 +1091,11 @@ static int recorder_start_backend(Recorder *recorder, const AppConfig *config, i
     recorder->running = 1;
     recorder->last_timing_report_ms = now_ms();
     if (game_audio_recording)
-        wprintf(L"Audio capture: independent five-second rolling audio recorder active.\n");
+        wprintf(L"Audio capture: %ls%ls recording.\n",
+                config->capture_game_audio ? L"game sound" : L"",
+                config->capture_microphone
+                    ? (config->capture_game_audio ? L" and microphone" : L"microphone")
+                    : L"");
     else
         wprintf(L"Audio capture: disabled or no configured audio source could start.\n");
     wprintf(L"Capture started with %ls: primary monitor %dx%d, %d-second buffer, %d-second segments at %d FPS, output height %d, %ls priority.\n",
@@ -1459,7 +1489,7 @@ static int save_clip(const AppConfig *config, Recorder *recorder, const wchar_t 
         free(audio);
         return 0;
     }
-    if (config->capture_game_audio)
+    if (config->capture_game_audio || config->capture_microphone)
         audio_count = list_segments_matching(config->buffer_dir, L"audio_*.mka",
                                              audio, MAX_SEGMENTS);
 
@@ -1591,7 +1621,7 @@ static int save_clip(const AppConfig *config, Recorder *recorder, const wchar_t 
         else
             wprintf(L"Independent audio assembly failed; saving this clip as video only. Details: %ls\n",
                     log_path);
-    } else if (config->capture_game_audio) {
+    } else if (config->capture_game_audio || config->capture_microphone) {
         wprintf(L"No independent audio segment was available; saving video only.\n");
     }
 
@@ -1660,10 +1690,6 @@ static int save_clip(const AppConfig *config, Recorder *recorder, const wchar_t 
     if (has_audio) {
         double drift_gap = 0.0, audio_end, audio_start, lead, seek;
         wchar_t seek_arg[64] = L"";
-        wchar_t volume_filter[64] = L"";
-        if (config->game_audio_volume != 100)
-            swprintf_s(volume_filter, ARRAY_COUNT(volume_filter), L",volume=%.2f",
-                       config->game_audio_volume / 100.0);
         if (tails_known) {
             tail_gap = (audio_tail_ms - video_tail_ms) / 1000.0;
             if (running && timing.have_video && timing.have_audio)
@@ -1681,10 +1707,10 @@ static int save_clip(const AppConfig *config, Recorder *recorder, const wchar_t 
             swprintf_s(command, ARRAY_COUNT(command),
                        L"\"%ls\" -hide_banner -loglevel warning -y "
                        L"-i %ls %ls-i joined_audio.mka -map 0:v:0 -map 1:a:0 -c:v copy "
-                       L"-af \"adelay=%lldS:all=1,apad%ls\" -c:a aac -b:a 192k "
+                       L"-af \"adelay=%lldS:all=1,apad\" -c:a aac -b:a 192k "
                        L"-t %.3f -movflags +faststart final.mp4",
                        config->ffmpeg_path, video_file, seek_arg,
-                       (long long)(lead * 48000.0 + 0.5), volume_filter, video_seconds);
+                       (long long)(lead * 48000.0 + 0.5), video_seconds);
             wprintf(L"Clip alignment: %.2f s of video; audio placed %+.0f ms from buffer tail (copy gap %+.0f ms, encoder drift %+.0f ms)%ls.\n",
                     video_seconds, (tail_gap + drift_gap) * 1000.0, tail_gap * 1000.0,
                     drift_gap * 1000.0, tails_known ? L"" : L", tails assumed equal");
@@ -1924,6 +1950,9 @@ static int parse_local_replay_result(const wchar_t *result_path, MatchResult *re
     }
 
     result->has_kill = owner_final_kill;
+    /* Older parsers only reported "sniper". */
+    if (!json_bool(json, "trickshotWeapon", &result->trickshot_weapon))
+        result->trickshot_weapon = result->sniper;
     json_double(json, "distanceUU", &result->distance_uu);
     json_string(json, "killer", result->killer, sizeof(result->killer));
     json_string(json, "victim", result->victim, sizeof(result->victim));
@@ -1996,19 +2025,22 @@ static void classify_pending_clip(const AppConfig *config, const wchar_t *clip,
         return;
     }
 
-    if (result.placement == 1 && result.has_kill && result.sniper) {
+    /* A trickshot: you won, you made the final kill, it was a sniper or a
+       heavy-ammo weapon, and the replay measured its distance. */
+    if (result.placement == 1 && result.has_kill && result.trickshot_weapon &&
+        result.distance_uu > 0.0) {
         double meters = result.distance_uu / 100.0;
         category = L"Trickshots";
-        shot_label = _stricmp(result.shot_type, "NoScope") == 0
-            ? L"NoScope"
-            : L"Sniper";
+        shot_label = _stricmp(result.shot_type, "NoScope") == 0 ? L"no-scope"
+                   : result.sniper ? L"sniper"
+                   : L"heavy-ammo";
         join_path(destination_dir, ARRAY_COUNT(destination_dir), config->clips_dir, category);
         ensure_directory(destination_dir);
         make_timestamp(timestamp, ARRAY_COUNT(timestamp));
         swprintf_s(destination, ARRAY_COUNT(destination), L"%ls\\%.0fm_%ls.mp4",
                    destination_dir, meters, timestamp);
         if (MoveFileExW(clip, destination, MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING))
-            wprintf(L"Qualified final %ls win: %ls\n", shot_label, destination);
+            wprintf(L"Qualified trickshot (%ls final kill, %.0fm): %ls\n", shot_label, meters, destination);
         else
             print_last_error(L"Could not move qualified clip");
     } else if (config->keep_rejected_clips) {

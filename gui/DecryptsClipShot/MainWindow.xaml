@@ -236,12 +236,12 @@
                             <StackPanel>
                                 <StackPanel Margin="0,0,0,10">
                                     <TextBlock Text="Trickshots" FontSize="18" FontWeight="SemiBold" Foreground="#E06A6A"/>
-                                    <TextBlock Text="Victory Royale sniper finishes, found automatically and titled with their distance." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,0"/>
+                                    <TextBlock Text="Wins where your final kill used a sniper or heavy-ammo weapon, found automatically and titled with the distance." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,0"/>
                                 </StackPanel>
                                 <ListBox x:Name="TrickshotClipsList" Background="Transparent" BorderThickness="0" SelectionChanged="ClipList_SelectionChanged" MouseDoubleClick="ClipList_MouseDoubleClick" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled" ItemTemplate="{StaticResource ClipCardTemplate}">
                                     <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ListBox.ItemsPanel>
                                 </ListBox>
-                                <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12.5" Margin="0,4,0,18" Text="No trickshots yet. Win a match with a sniper elimination and ClipShot saves it here automatically, titled with the distance.">
+                                <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12.5" Margin="0,4,0,18" Text="No trickshots yet. Win a match with a final kill from any sniper or heavy-ammo weapon (like the Hand Cannon) and ClipShot saves it here automatically.">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
                                             <Setter Property="Visibility" Value="Collapsed"/>
@@ -444,12 +444,33 @@
                                     <StackPanel><CheckBox x:Name="GameAudioCheck" Content="Record game sound" Foreground="White" FontWeight="SemiBold" Margin="0,0,0,8"/><TextBlock Text="Sound device (leave on Default unless your game sound uses another headset or speaker)" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/><ComboBox x:Name="GameAudioDeviceBox" Style="{StaticResource DarkComboBoxStyle}" IsEditable="False" ToolTip="ClipShot captures this playback device through Windows WASAPI loopback."/></StackPanel>
                                     <DockPanel Margin="0,18,0,2">
                                         <TextBlock x:Name="VolumeValueText" DockPanel.Dock="Right" Text="100%" FontSize="13" FontWeight="SemiBold"/>
-                                        <TextBlock Text="Clip volume" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+                                        <TextBlock Text="Game volume" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
                                     </DockPanel>
                                     <Slider x:Name="VolumeSlider" Style="{StaticResource DarkSlider}" Minimum="0" Maximum="200" TickFrequency="5" SmallChange="5" LargeChange="25" Value="100" ValueChanged="VolumeSlider_ValueChanged"
-                                            ToolTip="How loud game audio is in saved clips. 100% is the same as in game."/>
+                                            ToolTip="How loud the game is in saved clips. 100% is the same as in game."/>
+                                    <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,18,0,16"/>
+                                    <CheckBox x:Name="MicrophoneCheck" Content="Record my microphone" Foreground="White" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                                    <StackPanel x:Name="MicrophoneOptions" IsEnabled="{Binding IsChecked, ElementName=MicrophoneCheck}">
+                                        <StackPanel.Style>
+                                            <Style TargetType="StackPanel">
+                                                <Style.Triggers>
+                                                    <Trigger Property="IsEnabled" Value="False">
+                                                        <Setter Property="Opacity" Value="0.4"/>
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </StackPanel.Style>
+                                        <TextBlock Text="Microphone" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,6"/>
+                                        <ComboBox x:Name="MicrophoneDeviceBox" Style="{StaticResource DarkComboBoxStyle}" IsEditable="False"/>
+                                        <DockPanel Margin="0,16,0,2">
+                                            <TextBlock x:Name="MicVolumeValueText" DockPanel.Dock="Right" Text="100%" FontSize="13" FontWeight="SemiBold"/>
+                                            <TextBlock Text="Microphone volume" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+                                        </DockPanel>
+                                        <Slider x:Name="MicVolumeSlider" Style="{StaticResource DarkSlider}" Minimum="0" Maximum="200" TickFrequency="5" SmallChange="5" LargeChange="25" Value="100" ValueChanged="VolumeSlider_ValueChanged"/>
+                                        <TextBlock Text="Your voice is mixed into the clip with the game sound. Windows may ask you to allow microphone access." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                                    </StackPanel>
                                     <TextBlock x:Name="AudioDeviceStatusText" Text="Scanning Windows playback devices..." Foreground="#C99A9A" FontSize="11" Margin="0,14,0,0" TextWrapping="Wrap"/>
-                                    <TextBlock Text="ClipShot records one synchronized game-audio stream. Microphone capture was removed to keep more system resources available for smooth video." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,5,0,0" TextWrapping="Wrap"/>
+                                    
                                 </StackPanel>
                             </Border>
 

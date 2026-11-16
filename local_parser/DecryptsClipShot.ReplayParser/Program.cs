@@ -25,6 +25,11 @@ internal static class Program
         // Added for the Meter Checker detail cards. Declared after the original
         // fields so the engine's simple JSON reader still finds the top-level
         // "killer", "distanceUU" etc. first.
+        /// <summary>
+        /// True when the final kill used a weapon that counts for an automatic
+        /// trickshot: any sniper, or any weapon that uses heavy ammo.
+        /// </summary>
+        public bool TrickshotWeapon { get; init; }
         public string KillerPlatform { get; init; } = "";
         public string VictimPlatform { get; init; } = "";
         public KillDetails? Furthest { get; init; }
@@ -111,57 +116,64 @@ internal static class Program
                 string.Equals(player.PlayerName, finalKill.PlayerName, StringComparison.OrdinalIgnoreCase));
         string[] tags = ReadKillTags(finalKill, victimData);
         bool sniper = tags.Any(IsSniperTag);
+        // Automatic trickshots count any sniper OR any heavy-ammo weapon
+        // (Hand Cannon, Flint-Knock Pistol, ...).
+        bool trickshotWeapon = sniper || tags.Any(IsHeavyAmmoTag);
         double distance = finalKill.Distance ?? 0;
+        string weaponName = ExtractWeapon(tags);
+        string killerPlatform = ResolvePlatform(players, finalKill.FinisherOrDowner, finalKill.FinisherOrDownerName);
+        string victimPlatform = ResolvePlatform(players, finalKill.PlayerId, finalKill.PlayerName);
 
         if (!ownerFinalKill)
         {
             string reason = tags.Length == 0
-                ? "The last valid elimination did not contain weapon tags. Automatic clipping remains replay-owner-only."
-                : sniper && distance <= 0
-                    ? "The last valid kill was a sniper elimination, but it did not contain a usable distance. " +
-                      "Automatic clipping remains replay-owner-only."
-                    : sniper
-                        ? $"The last valid kill was a sniper elimination by {killer} at " +
-                          $"{distance / 100.0:F1} meters. Automatic clipping remains replay-owner-only."
-                        : ignoredLaterEvents > 0
-                            ? $"After ignoring {ignoredLaterEvents} non-combat or disconnect event(s), " +
-                              "the last valid elimination was not a sniper kill by the replay owner."
-                            : "The last valid elimination was not a sniper kill by the replay owner.";
+                ? "The last valid elimination did not contain weapon tags. Automatic clips only count the replay owner's kills."
+                : trickshotWeapon && distance > 0
+                    ? $"The last valid kill was a {weaponName} elimination by {killer} at " +
+                      $"{distance / 100.0:F1} meters. Automatic clips only count the replay owner's kills."
+                    : ignoredLaterEvents > 0
+                        ? $"After ignoring {ignoredLaterEvents} non-combat or disconnect event(s), " +
+                          "the last valid elimination was not the replay owner's sniper or heavy-ammo kill."
+                        : "The last valid elimination was not the replay owner's sniper or heavy-ammo kill.";
 
             return new LocalReplayResult(true, placement, false, sniper,
-                distance, killer, victim, ExtractWeapon(tags),
-                ExtractRarity(tags),
-                sniper ? "Sniper" : "Other",
+                distance, killer, victim, weaponName, ExtractRarity(tags),
+                sniper ? "Sniper" : trickshotWeapon ? "HeavyAmmo" : "Other",
                 reason)
             {
-                KillerPlatform = ResolvePlatform(players, finalKill.FinisherOrDowner, finalKill.FinisherOrDownerName),
-                VictimPlatform = ResolvePlatform(players, finalKill.PlayerId, finalKill.PlayerName)
+                TrickshotWeapon = trickshotWeapon,
+                KillerPlatform = killerPlatform,
+                VictimPlatform = victimPlatform
             };
         }
 
         if (tags.Length == 0)
             return Inconclusive("The final elimination did not contain weapon tags.", placement);
 
-        string weapon = ExtractWeapon(tags);
+        if (trickshotWeapon && distance <= 0)
+            return Inconclusive($"The final {weaponName} elimination did not contain a usable distance.", placement);
+
         bool targetingKnown = false;
         string shotType = sniper
             ? ClassifySniperShot(owner, finalKill, tags, out targetingKnown)
-            : "Other";
+            : trickshotWeapon ? "HeavyAmmo" : "Other";
 
-        if (sniper && distance <= 0)
-            return Inconclusive("The sniper elimination did not contain a usable distance.", placement);
-
-        return new LocalReplayResult(true, placement, true, sniper, distance,
-            killer, victim, weapon, ExtractRarity(tags), shotType,
-            sniper
+        string summary = !trickshotWeapon
+            ? $"The replay owner's final elimination used {weaponName}, which is not a sniper or heavy-ammo weapon."
+            : sniper
                 ? $"Local analysis found a final {FormatShotType(shotType)} elimination at " +
                   $"{distance / 100.0:F1} meters ({ownerResolution}; " +
                   $"aim state {(targetingKnown ? "verified" : "unavailable, kept as Sniper")}; " +
                   $"ignored {ignoredLaterEvents} later non-combat event(s))."
-                : "The replay owner's final elimination was not classified as a sniper.")
+                : $"Local analysis found a final heavy-ammo elimination ({weaponName}) at " +
+                  $"{distance / 100.0:F1} meters ({ownerResolution}).";
+
+        return new LocalReplayResult(true, placement, true, sniper, distance,
+            killer, victim, weaponName, ExtractRarity(tags), shotType, summary)
         {
-            KillerPlatform = ResolvePlatform(players, finalKill.FinisherOrDowner, finalKill.FinisherOrDownerName),
-            VictimPlatform = ResolvePlatform(players, finalKill.PlayerId, finalKill.PlayerName)
+            TrickshotWeapon = trickshotWeapon,
+            KillerPlatform = killerPlatform,
+            VictimPlatform = victimPlatform
         };
     }
 
@@ -507,6 +519,20 @@ internal static class Program
             ?? "Unknown";
     }
 
+    // Heavy ammo is matched by explicit ammo tags or by specific heavy-ammo
+    // weapons. The word "heavy" alone is NOT enough: the Heavy Shotgun and
+    // Heavy Assault Rifle use other ammo. Snipers are covered by IsSniperTag.
+    // Add new heavy-ammo weapons here when Fortnite introduces them.
+    private static readonly string[] HeavyAmmoMarkers =
+    [
+        "ammo.heavy", "ammoheavy", "heavyammo", "heavybullets", "heavy.bullets", "ammodataheavy",
+        "handcannon", "hand.cannon", "hand_cannon", "deagle",
+        "flintknock", "flint.knock", "flint_knock"
+    ];
+
+    private static bool IsHeavyAmmoTag(string tag) =>
+        HeavyAmmoMarkers.Any(marker => tag.Contains(marker, StringComparison.OrdinalIgnoreCase));
+
     private static bool IsSniperTag(string tag) =>
         tag.Contains("sniper", StringComparison.OrdinalIgnoreCase) ||
         tag.Contains("huntingrifle", StringComparison.OrdinalIgnoreCase) ||
@@ -559,7 +585,8 @@ internal static class Program
             string weaponClass = words[0];
             words.RemoveAt(0);
             // "Sniper.HuntingRifle" already names its class: "Hunting Rifle".
-            if (!WeaponClasses.Contains(words[^1], StringComparer.OrdinalIgnoreCase))
+            if (!WeaponClasses.Contains(words[^1], StringComparer.OrdinalIgnoreCase) &&
+                !words[^1].Equals("Cannon", StringComparison.OrdinalIgnoreCase))
                 words.Add(weaponClass);
         }
         return string.Join(" ", words);
