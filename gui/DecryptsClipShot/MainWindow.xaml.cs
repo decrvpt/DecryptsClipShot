@@ -1379,7 +1379,7 @@ public partial class MainWindow : Window
         bool haveFinal = conclusive && !string.IsNullOrWhiteSpace(killer);
         FinalKillCard.Visibility = haveFinal ? Visibility.Visible : Visibility.Collapsed;
         if (haveFinal)
-            FillKillCard(root, FinalKillDistanceText, FinalKillKillerText, FinalKillVictimText,
+            FillKillCard(root, FinalKillShotText, FinalKillNameWeaponButton, FinalKillDistanceText, FinalKillKillerText, FinalKillVictimText,
                 FinalKillWeaponText, FinalKillRarityText);
 
         bool haveFurthest = root.TryGetProperty("furthest", out JsonElement furthest) &&
@@ -1387,7 +1387,7 @@ public partial class MainWindow : Window
                             JsonNumber(furthest, "distanceUU") > 0;
         FurthestKillCard.Visibility = haveFurthest ? Visibility.Visible : Visibility.Collapsed;
         if (haveFurthest)
-            FillKillCard(furthest, FurthestKillDistanceText, FurthestKillKillerText,
+            FillKillCard(furthest, FurthestKillShotText, FurthestKillNameWeaponButton, FurthestKillDistanceText, FurthestKillKillerText,
                 FurthestKillVictimText, FurthestKillWeaponText, FurthestKillRarityText);
 
         // Keep one card full width when the other has nothing to show.
@@ -1403,9 +1403,75 @@ public partial class MainWindow : Window
         ReplayResultCard.Visibility = haveFinal || haveFurthest ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private static void FillKillCard(JsonElement kill, TextBlock distance, TextBlock killer,
+    // ===== Naming unknown weapons =====
+    // Fortnite names weapons by codename in replays. When one isn't in
+    // ClipShot's list, the player can name it once; the parser checks
+    // %LOCALAPPDATA%\Decrypts ClipShot\weapons.json before its built-in list.
+
+    private static string UserWeaponsPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Decrypts ClipShot", "weapons.json");
+
+    private void NameWeapon_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: ValueTuple<string, string> info }) return;
+        (string key, string shownAs) = info;
+        var dialog = new NameWeaponWindow(key, shownAs) { Owner = this };
+        if (dialog.ShowDialog() != true) return;
+
+        try
+        {
+            System.Text.Json.Nodes.JsonObject root;
+            if (File.Exists(UserWeaponsPath) &&
+                System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(UserWeaponsPath)) is System.Text.Json.Nodes.JsonObject existing)
+                root = existing;
+            else
+                root = new System.Text.Json.Nodes.JsonObject();
+            if (root["weapons"] is not System.Text.Json.Nodes.JsonArray weapons)
+            {
+                weapons = new System.Text.Json.Nodes.JsonArray();
+                root["weapons"] = weapons;
+            }
+            // Replace an earlier name for the same codename.
+            for (int index = weapons.Count - 1; index >= 0; index--)
+            {
+                if (weapons[index]?["match"] is System.Text.Json.Nodes.JsonArray match &&
+                    match.Any(token => string.Equals(token?.GetValue<string>(), key, StringComparison.OrdinalIgnoreCase)))
+                    weapons.RemoveAt(index);
+            }
+            weapons.Add(new System.Text.Json.Nodes.JsonObject
+            {
+                ["name"] = dialog.WeaponName,
+                ["match"] = new System.Text.Json.Nodes.JsonArray(key),
+                ["class"] = dialog.IsSniper ? "Sniper Rifle" : shownAs,
+                ["ammo"] = dialog.UsesHeavyAmmo ? "Heavy" : "",
+                ["sniper"] = dialog.IsSniper,
+                ["scope"] = dialog.HasScope,
+                ["source"] = $"Named in Meter Checker on {DateTime.Now:yyyy-MM-dd}"
+            });
+            Directory.CreateDirectory(Path.GetDirectoryName(UserWeaponsPath)!);
+            File.WriteAllText(UserWeaponsPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            AddActivity($"Saved weapon name \"{dialog.WeaponName}\" for {key}");
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+        {
+            MessageBox.Show(this, $"The weapon name couldn't be saved: {exception.Message}", "Name this weapon",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        // Show the new name straight away.
+        AnalyzeReplay_Click(this, new RoutedEventArgs());
+    }
+
+    private static void FillKillCard(JsonElement kill, TextBlock shot, Button nameWeapon,
+                                     TextBlock distance, TextBlock killer,
                                      TextBlock victim, TextBlock weapon, TextBlock rarity)
     {
+        string shotLabel = JsonText(kill, "shotLabel", "");
+        shot.Text = Present(shotLabel);
+        shot.FontWeight = shotLabel == "No-scope" ? FontWeights.SemiBold : FontWeights.Normal;
+        shot.Foreground = shotLabel == "No-scope"
+            ? new SolidColorBrush(Color.FromRgb(0xEF, 0x55, 0x55))
+            : new SolidColorBrush(Color.FromRgb(0xF9, 0xF4, 0xF4));
         double distanceUU = JsonNumber(kill, "distanceUU");
         distance.Text = distanceUU > 0
             ? (distanceUU / 100.0).ToString("F2", CultureInfo.CurrentCulture) + " m"
@@ -1428,6 +1494,9 @@ public partial class MainWindow : Window
         weapon.ToolTip = tags.Length == 0
             ? "The replay didn't include weapon details for this kill."
             : header + "\n" + string.Join("\n", tags);
+        string key = JsonText(kill, "weaponKey", "");
+        nameWeapon.Visibility = !known && key.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        nameWeapon.Tag = (key, weapon.Text);
         string rarityName = Present(JsonText(kill, "rarity", ""));
         rarity.Text = rarityName;
         rarity.Foreground = new SolidColorBrush(RarityColor(rarityName));

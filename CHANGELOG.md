@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.3
+
+- Meter Checker shows how each sniper kill was hit: **Scoped**, **No-scope**, or **Aimed (iron sights)** for scopeless snipers like the Hunting Rifle.
+- More snipers are recognized by name: Suppressed, Bolt-Action and Semi-Auto Sniper Rifles join the Heavy, Heavy Impact, Hunting, Automatic, Boom and Lawless Tracking Rifles.
+- New "Name this weapon" link in Meter Checker: if a weapon only shows as "Sniper Rifle" or "Pistol", give it its real name once and ClipShot remembers it.
+- Fixed Hunting Rifle kills that could be labelled as no-scopes.
+
 ## 1.0.2
 
 - Meter Checker shows real weapon names from a weapon list (for example "Usopp's Slingshot" instead of "Slingshot Harmless Thrift Pistol", and "Assault Rifle" instead of "Assault Standard"). Weapons not in the list yet show their type (like "Pistol"). Hover a weapon to see the raw Fortnite tags.

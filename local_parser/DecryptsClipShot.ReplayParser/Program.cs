@@ -34,6 +34,10 @@ internal static class Program
         public string[] WeaponTags { get; init; } = [];
         /// <summary>False when the weapon isn't in weapons.json yet (only its class is shown).</summary>
         public bool WeaponKnown { get; init; }
+        /// <summary>Codename part of the weapon tag, used by "Name this weapon".</summary>
+        public string WeaponKey { get; init; } = "";
+        /// <summary>Scoped / No-scope / Aimed (iron sights) / Not recorded; empty for non-snipers.</summary>
+        public string ShotLabel { get; init; } = "";
         public string KillerPlatform { get; init; } = "";
         public string VictimPlatform { get; init; } = "";
         public KillDetails? Furthest { get; init; }
@@ -48,7 +52,9 @@ internal static class Program
         string Weapon,
         string Rarity,
         string[] WeaponTags,
-        bool WeaponKnown);
+        bool WeaponKnown,
+        string WeaponKey,
+        string ShotLabel);
 
     private static int Main(string[] args)
     {
@@ -153,6 +159,9 @@ internal static class Program
                 TrickshotWeapon = trickshotWeapon,
                 WeaponTags = tags,
                 WeaponKnown = weapon.Known,
+                WeaponKey = weapon.TagKey ?? "",
+                ShotLabel = ShotLabel(sniper, weapon.HasScope,
+                    FindPlayer(players, finalKill.FinisherOrDowner, finalKill.FinisherOrDownerName), finalKill, tags),
                 KillerPlatform = killerPlatform,
                 VictimPlatform = victimPlatform
             };
@@ -185,6 +194,8 @@ internal static class Program
             TrickshotWeapon = trickshotWeapon,
             WeaponTags = tags,
             WeaponKnown = weapon.Known,
+            WeaponKey = weapon.TagKey ?? "",
+            ShotLabel = ShotLabel(sniper, weapon.HasScope, owner, finalKill, tags),
             KillerPlatform = killerPlatform,
             VictimPlatform = victimPlatform
         };
@@ -205,6 +216,7 @@ internal static class Program
         string[] tags = ReadKillTags(best, victimData);
         string rarity = KillRarity(tags, best, victimData);
         WeaponResult weapon = WeaponCatalog.Resolve(tags, rarity, ReadMember(best, "DeathCause"));
+        bool furthestSniper = weapon.IsSniper || (!weapon.Known && tags.Any(IsSniperTag));
         return new KillDetails(
             best.Distance ?? 0,
             ResolvePlayerName(players, best.FinisherOrDowner, best.FinisherOrDownerName),
@@ -214,7 +226,10 @@ internal static class Program
             weapon.Name,
             rarity,
             tags,
-            weapon.Known);
+            weapon.Known,
+            weapon.TagKey ?? "",
+            ShotLabel(furthestSniper, weapon.HasScope,
+                FindPlayer(players, best.FinisherOrDowner, best.FinisherOrDownerName), best, tags));
     }
 
     private static PlayerData? FindPlayer(IEnumerable<PlayerData> players, int? id, string? name)
@@ -510,11 +525,30 @@ internal static class Program
         ?? instance.GetType().GetField(name,
             BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(instance);
 
+    // Only gameplay/event tags can say a shot was a no-scope. Weapon identity
+    // tags can't: the Hunting Rifle's codename is literally "Sniper.NoScope".
     private static bool IsExplicitNoScopeTag(string tag) =>
-        tag.Contains("noscope", StringComparison.OrdinalIgnoreCase) ||
+        !tag.Contains("Weapon.", StringComparison.OrdinalIgnoreCase) &&
+        (tag.Contains("noscope", StringComparison.OrdinalIgnoreCase) ||
         tag.Contains("no.scope", StringComparison.OrdinalIgnoreCase) ||
         tag.Contains("hipfire", StringComparison.OrdinalIgnoreCase) ||
-        tag.Contains("hip.fire", StringComparison.OrdinalIgnoreCase);
+        tag.Contains("hip.fire", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Player-facing shot description for sniper kills: whether the shooter was
+    /// aiming down sights in the 1.5 s before the kill (read from the replay's
+    /// movement data). Empty for non-snipers.
+    /// </summary>
+    private static string ShotLabel(bool sniper, bool hasScope, PlayerData? shooter,
+                                    KillFeedEntry kill, IEnumerable<string> tags)
+    {
+        if (!sniper) return "";
+        if (shooter is null) return "Not recorded";
+        string shot = ClassifySniperShot(shooter, kill, tags, out bool known);
+        if (!known) return "Not recorded";
+        if (shot == "NoScope") return "No-scope";
+        return hasScope ? "Scoped" : "Aimed (iron sights)";
+    }
 
     private static string FormatShotType(string shotType) =>
         shotType == "NoScope" ? "no-scope sniper" : "sniper";

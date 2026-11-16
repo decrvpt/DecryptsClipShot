@@ -11,6 +11,7 @@ internal sealed record WeaponEntry(
     string Class,
     string Ammo,
     bool Sniper,
+    bool HasScope,
     string? Source);
 
 /// <summary>What the parser decided about a kill's weapon.</summary>
@@ -20,7 +21,8 @@ internal sealed record WeaponResult(
     bool IsSniper,
     bool IsHeavyAmmo,
     bool Known,
-    string? TagKey);
+    string? TagKey,
+    bool HasScope = true);
 
 /// <summary>
 /// Turns Fortnite's weapon tags into the names players know.
@@ -68,16 +70,22 @@ internal static class WeaponCatalog
         ["Trap"] = "Trap"
     };
 
+    /// <summary>Weapons the player named in Meter Checker.</summary>
+    public static string UserWeaponsPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Decrypts ClipShot", "weapons.json");
+
     private static List<WeaponEntry> Load()
     {
         var entries = new List<WeaponEntry>();
-        // A weapons.json beside ClipShotReplayParser.exe (if present) is checked
-        // first, so the table can be patched without rebuilding.
-        string beside = Path.Combine(AppContext.BaseDirectory, "weapons.json");
-        if (File.Exists(beside))
+        // Checked in order, first match wins:
+        //  1. names the player saved in Meter Checker ("Name this weapon")
+        //  2. a weapons.json beside ClipShotReplayParser.exe (manual patch)
+        //  3. the list built into this release
+        foreach (string file in new[] { UserWeaponsPath, Path.Combine(AppContext.BaseDirectory, "weapons.json") })
         {
-            try { entries.AddRange(Parse(File.ReadAllText(beside))); }
-            catch (Exception exception) { Console.Error.WriteLine($"Ignoring weapons.json beside the parser: {exception.Message}"); }
+            if (!File.Exists(file)) continue;
+            try { entries.AddRange(Parse(File.ReadAllText(file))); }
+            catch (Exception exception) { Console.Error.WriteLine($"Ignoring {file}: {exception.Message}"); }
         }
         using Stream? embedded = Assembly.GetExecutingAssembly().GetManifestResourceStream("weapons.json");
         if (embedded is not null)
@@ -108,6 +116,7 @@ internal static class WeaponCatalog
                 Text("class"),
                 Text("ammo"),
                 weapon.TryGetProperty("sniper", out JsonElement sniper) && sniper.ValueKind == JsonValueKind.True,
+                !(weapon.TryGetProperty("scope", out JsonElement scope) && scope.ValueKind == JsonValueKind.False),
                 Text("source"));
         }
     }
@@ -141,7 +150,7 @@ internal static class WeaponCatalog
                     ? best.MythicName
                     : best.Name;
                 return new WeaponResult(name, best.Class, best.Sniper,
-                    best.Ammo.Equals("Heavy", StringComparison.OrdinalIgnoreCase), true, key);
+                    best.Ammo.Equals("Heavy", StringComparison.OrdinalIgnoreCase), true, key, best.HasScope);
             }
 
             // Not in the table yet: show the class only, never the codename words.

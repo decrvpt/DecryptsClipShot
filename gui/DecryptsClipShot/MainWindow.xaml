@@ -326,7 +326,18 @@
                                     <Border Padding="0,9" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
                                         <Grid>
                                             <TextBlock Text="Weapon" Foreground="{StaticResource MutedBrush}" FontSize="13"/>
-                                            <TextBlock x:Name="FinalKillWeaponText" Text="—" Foreground="{StaticResource TextBrush}" FontSize="13" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" Margin="90,0,0,0" TextAlignment="Right"/>
+                                            <StackPanel HorizontalAlignment="Right" Margin="90,0,0,0">
+                                                <TextBlock x:Name="FinalKillWeaponText" Text="—" Foreground="{StaticResource TextBrush}" FontSize="13" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" TextAlignment="Right"/>
+                                                <Button x:Name="FinalKillNameWeaponButton" Content="Name this weapon" Style="{StaticResource LinkButton}" FontSize="11" HorizontalAlignment="Right" Margin="0,3,0,0" Visibility="Collapsed" Click="NameWeapon_Click"
+                                                        ToolTip="ClipShot doesn't know this weapon yet. Give it its real name once and it's remembered."/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                    <Border Padding="0,9" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+                                        <Grid>
+                                            <TextBlock Text="Shot" Foreground="{StaticResource MutedBrush}" FontSize="13"/>
+                                            <TextBlock x:Name="FinalKillShotText" Text="—" Foreground="{StaticResource TextBrush}" FontSize="13" HorizontalAlignment="Right" Margin="90,0,0,0" TextAlignment="Right"
+                                                       ToolTip="For snipers: whether the shooter was aiming down sights in the moment before the kill, read from the replay."/>
                                         </Grid>
                                     </Border>
                                     <Border Padding="0,9">
@@ -364,7 +375,18 @@
                                     <Border Padding="0,9" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
                                         <Grid>
                                             <TextBlock Text="Weapon" Foreground="{StaticResource MutedBrush}" FontSize="13"/>
-                                            <TextBlock x:Name="FurthestKillWeaponText" Text="—" Foreground="{StaticResource TextBrush}" FontSize="13" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" Margin="90,0,0,0" TextAlignment="Right"/>
+                                            <StackPanel HorizontalAlignment="Right" Margin="90,0,0,0">
+                                                <TextBlock x:Name="FurthestKillWeaponText" Text="—" Foreground="{StaticResource TextBrush}" FontSize="13" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" TextAlignment="Right"/>
+                                                <Button x:Name="FurthestKillNameWeaponButton" Content="Name this weapon" Style="{StaticResource LinkButton}" FontSize="11" HorizontalAlignment="Right" Margin="0,3,0,0" Visibility="Collapsed" Click="NameWeapon_Click"
+                                                        ToolTip="ClipShot doesn't know this weapon yet. Give it its real name once and it's remembered."/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                    <Border Padding="0,9" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+                                        <Grid>
+                                            <TextBlock Text="Shot" Foreground="{StaticResource MutedBrush}" FontSize="13"/>
+                                            <TextBlock x:Name="FurthestKillShotText" Text="—" Foreground="{StaticResource TextBrush}" FontSize="13" HorizontalAlignment="Right" Margin="90,0,0,0" TextAlignment="Right"
+                                                       ToolTip="For snipers: whether the shooter was aiming down sights in the moment before the kill, read from the replay."/>
                                         </Grid>
                                     </Border>
                                     <Border Padding="0,9">
