@@ -1,0 +1,119 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <!--
+    The MSI is the engine of the installation; DecryptsClipShot-Setup.exe is the
+    branded wizard in front of it and passes these public properties:
+
+      INSTALLFOLDER     install location (default %LOCALAPPDATA%\Programs\Decrypts ClipShot)
+      DESKTOPSHORTCUT   "1" = create a desktop shortcut (default), "0" = none
+      STARTUPSHORTCUT   "1" = start ClipShot in the tray when Windows starts, "0" = no (default)
+
+    Double-clicking the MSI directly also works: it shows one simple screen
+    (accept the license, click Install) with ClipShot artwork and the
+    defaults above.
+
+    ClipShotVersion comes from the build (build_msi.bat or the GitHub
+    release workflow); see installer\DecryptsClipShot.Installer.wixproj.
+  -->
+  <Package Id="Decrypt.ClipShot"
+           Name="Decrypt's ClipShot"
+           Manufacturer="Decrypt"
+           Version="$(var.ClipShotVersion)"
+           UpgradeCode="{D85F0A8C-3DB0-4D7E-90D0-5896EC200B32}"
+           Scope="perUser"
+           InstallerVersion="500">
+
+    <!-- Same-version upgrades let a rebuilt package replace the installed one
+         instead of installing side by side. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of Decrypt's ClipShot is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Property Id="DESKTOPSHORTCUT" Value="1" Secure="yes" />
+    <Property Id="STARTUPSHORTCUT" Value="0" Secure="yes" />
+
+    <ui:WixUI Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
+    <WixVariable Id="WixUIBannerBmp" Value="Assets\banner.bmp" />
+    <WixVariable Id="WixUIDialogBmp" Value="Assets\dialog.bmp" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Decrypts ClipShot">
+          <!-- Created by the engine at run time; listed only so uninstall can clean them. -->
+          <Directory Id="BUFFERFOLDER" Name="buffer" />
+          <Directory Id="WORKFOLDER" Name="work" />
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+    <StandardDirectory Id="DesktopFolder" />
+    <StandardDirectory Id="StartupFolder" />
+
+    <Icon Id="ClipShotRedIconV100" SourceFile="..\gui\DecryptsClipShot\Assets\clipshot-red.ico" />
+    <Property Id="ARPPRODUCTICON" Value="ClipShotRedIconV100" />
+    <Property Id="ARPCONTACT" Value="Decrypt" />
+    <Property Id="ARPCOMMENTS" Value="Fortnite gameplay clipping and trickshot detection." />
+
+    <Files Include="!(bindpath.Publish)\**" Directory="INSTALLFOLDER">
+      <Exclude Files="!(bindpath.Publish)\DecryptsClipShot.exe" />
+      <Exclude Files="!(bindpath.Publish)\*.pdb" />
+    </Files>
+
+    <Component Id="MainApplication" Directory="INSTALLFOLDER">
+      <File Id="MainExecutable" Source="!(bindpath.Publish)\DecryptsClipShot.exe">
+        <Shortcut Id="StartMenuShortcut"
+                  Directory="ProgramMenuFolder"
+                  Name="Decrypt's ClipShot"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="ClipShotRedIconV100"
+                  Advertise="no" />
+      </File>
+    </Component>
+
+    <Component Id="DesktopShortcutComponent" Directory="DesktopFolder"
+               Condition="DESKTOPSHORTCUT = &quot;1&quot;">
+      <Shortcut Id="DesktopShortcut"
+                Name="Decrypt's ClipShot"
+                Target="[INSTALLFOLDER]DecryptsClipShot.exe"
+                WorkingDirectory="INSTALLFOLDER"
+                Icon="ClipShotRedIconV100" />
+      <RegistryValue Root="HKCU" Key="Software\Decrypt\ClipShot"
+                     Name="DesktopShortcut" Type="string" Value="1" KeyPath="yes" />
+    </Component>
+
+    <Component Id="StartupShortcutComponent" Directory="StartupFolder"
+               Condition="STARTUPSHORTCUT = &quot;1&quot;">
+      <!-- "startup" opens ClipShot straight to the system tray. -->
+      <Shortcut Id="StartupShortcut"
+                Name="Decrypt's ClipShot"
+                Target="[INSTALLFOLDER]DecryptsClipShot.exe"
+                Arguments="--startup"
+                WorkingDirectory="INSTALLFOLDER"
+                Icon="ClipShotRedIconV100" />
+      <RegistryValue Root="HKCU" Key="Software\Decrypt\ClipShot"
+                     Name="StartWithWindows" Type="string" Value="1" KeyPath="yes" />
+    </Component>
+
+    <!-- Lets the setup wizard find an existing installation and reuse its folder. -->
+    <Component Id="InstallRegistryMarker" Directory="INSTALLFOLDER">
+      <RegistryValue Root="HKCU" Key="Software\Decrypt\ClipShot"
+                     Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+      <RegistryValue Root="HKCU" Key="Software\Decrypt\ClipShot"
+                     Name="InstallFolder" Type="string" Value="[INSTALLFOLDER]" />
+      <RegistryValue Root="HKCU" Key="Software\Decrypt\ClipShot"
+                     Name="Version" Type="string" Value="[ProductVersion]" />
+    </Component>
+
+    <!-- The rolling buffer and temporary work files are disposable; saved clips
+         and the user's settings in %LOCALAPPDATA%\Decrypts ClipShot are kept. -->
+    <Component Id="RuntimeFolderCleanup" Directory="INSTALLFOLDER">
+      <RemoveFile Id="CleanBuffer" Directory="BUFFERFOLDER" Name="*" On="uninstall" />
+      <RemoveFolder Id="CleanBufferFolder" Directory="BUFFERFOLDER" On="uninstall" />
+      <RemoveFile Id="CleanWork" Directory="WORKFOLDER" Name="*" On="uninstall" />
+      <RemoveFolder Id="CleanWorkFolder" Directory="WORKFOLDER" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\Decrypt\ClipShot"
+                     Name="RuntimeCleanup" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+  </Package>
+</Wix>

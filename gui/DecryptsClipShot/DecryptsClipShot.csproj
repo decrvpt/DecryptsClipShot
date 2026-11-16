@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <!-- Explicit usings prevent WinForms tray types from colliding with WPF controls. -->
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>DecryptsClipShot</AssemblyName>
+    <RootNamespace>DecryptsClipShot</RootNamespace>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <ApplicationIcon>Assets\clipshot-red.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="Assets\clipshot-logo-transparent.png" />
+    <Resource Include="Assets\clipshot-red.ico" />
+    <None Include="Assets\clipshot-logo.svg" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    One-button setup wizard. It embeds the MSI built by installer\ and runs it
+    through msi.dll, so users get one DecryptsClipShot-Setup.exe while
+    Windows still sees a normal, uninstallable MSI product.
+    Built by build_msi.bat after the MSI exists.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>DecryptsClipShot-Setup</AssemblyName>
+    <RootNamespace>DecryptsClipShot.Setup</RootNamespace>
+    <ApplicationIcon>..\..\gui\DecryptsClipShot\Assets\clipshot-red.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Product>Decrypt's ClipShot Setup</Product>
+    <Company>Decrypt</Company>
+    <Version>1.0.0</Version>
+    <ClipShotMsi Condition="'$(ClipShotMsi)' == ''">..\..\dist\Installer\DecryptsClipShot-Setup.msi</ClipShotMsi>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="..\..\gui\DecryptsClipShot\Assets\clipshot-logo-transparent.png" Link="Assets\clipshot-logo-transparent.png" />
+    <EmbeddedResource Include="..\..\installer\License.rtf" LogicalName="License.rtf" />
+    <EmbeddedResource Include="$(ClipShotMsi)" LogicalName="ClipShot.msi" Condition="Exists('$(ClipShotMsi)')" />
+  </ItemGroup>
+
+</Project>

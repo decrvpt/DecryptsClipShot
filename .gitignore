@@ -1,0 +1,16 @@
+build/
+dist/
+**/bin/
+**/obj/
+.vs/
+*.user
+*.suo
+*.pdb
+
+# Large third-party binaries are supplied only for local/release builds.
+ffmpeg.exe
+
+# Runtime data created beside the installed application.
+buffer/
+clips/
+work/
