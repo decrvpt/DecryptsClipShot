@@ -2771,6 +2771,10 @@ static double damage_number_score(const unsigned char *rgb, DamageScratch *d)
         piece_count++;
     }
 
+    /* Link digits that sit side by side (same height and top, small gap)
+       into rows. */
+    int group[DMG_MAX_PIECES];
+    for (int i = 0; i < piece_count; i++) group[i] = i;
     for (int i = 0; i < piece_count; i++) {
         for (int j = 0; j < piece_count; j++) {
             int slack = pieces[i].height / 4 > 2 ? pieces[i].height / 4 : 2;
@@ -2779,12 +2783,43 @@ static double damage_number_score(const unsigned char *rgb, DamageScratch *d)
             if (abs(pieces[i].top - pieces[j].top) <= slack &&
                 abs(pieces[i].height - pieces[j].height) <= slack &&
                 gap > 0 && gap <= pieces[i].height) {
+                int a = i, b = j;
+                while (group[a] != a) a = group[a];
+                while (group[b] != b) b = group[b];
+                if (a != b) group[b] = a;
                 used[i] = used[j] = 1;
             }
         }
     }
-    for (int i = 0; i < piece_count; i++)
-        if (used[i]) score += pieces[i].size;
+    /* A damage number is one short row (2-4 digits) standing on its own. A
+       "row" inside a crowd of similar pieces (a firework burst, sparkles,
+       snowy rocks) is not a number. */
+    for (int root = 0; root < piece_count; root++) {
+        int members = 0, top = DMG_H, bottom = 0, left = DMG_W, right = 0, crowd = 0, tallest = 0;
+        double row_score = 0.0;
+        for (int i = 0; i < piece_count; i++) {
+            int r = i;
+            while (group[r] != r) r = group[r];
+            if (r != root || !used[i]) continue;
+            members++;
+            row_score += pieces[i].size;
+            if (pieces[i].top < top) top = pieces[i].top;
+            if (pieces[i].top + pieces[i].height > bottom) bottom = pieces[i].top + pieces[i].height;
+            if (pieces[i].left < left) left = pieces[i].left;
+            if (pieces[i].left + pieces[i].width > right) right = pieces[i].left + pieces[i].width;
+            if (pieces[i].height > tallest) tallest = pieces[i].height;
+        }
+        if (members < 2 || members > 4) continue;
+        for (int i = 0; i < piece_count; i++) {
+            int r = i;
+            while (group[r] != r) r = group[r];
+            if (r == root && used[i]) continue;
+            if (pieces[i].left < right + tallest && pieces[i].left + pieces[i].width > left - tallest &&
+                pieces[i].top < bottom + tallest && pieces[i].top + pieces[i].height > top - tallest)
+                crowd++;
+        }
+        if (crowd < 2) score += row_score;
+    }
     return score;
 }
 
@@ -3069,8 +3104,8 @@ static void analyze_trickshot_clip(const AppConfig *config, const wchar_t *clip,
     end_of_match = duration - config->post_match_seconds;
     if (estimate_known) {
         double estimate = end_of_match - result->kill_before_end;
-        from = estimate - 4.0;
-        to = estimate + 4.0;
+        from = estimate - 6.0;
+        to = estimate + 6.0;
     } else {
         from = end_of_match - 30.0;
         to = end_of_match + 1.0;
@@ -3097,8 +3132,14 @@ static void analyze_trickshot_clip(const AppConfig *config, const wchar_t *clip,
         double streak_from = out->damage_found ? out->damage_moment - 0.5 : from;
         double streak_to = out->damage_found ? out->damage_moment + 3.5 : to;
         if (streak_to > duration) streak_to = duration;
-        if (find_kill_moment(config, clip, config->work_dir, streak_from, streak_to,
-                             &out->streak_moment, &stands_out) && stands_out) {
+        int lines = find_kill_moment(config, clip, config->work_dir, streak_from, streak_to,
+                                     &out->streak_moment, &stands_out) && stands_out;
+        /* If nothing showed up after the number, look across the whole
+           window before giving up. */
+        if (!lines && out->damage_found)
+            lines = find_kill_moment(config, clip, config->work_dir, from, to,
+                                     &out->streak_moment, &stands_out) && stands_out;
+        if (lines) {
             out->streaks_found = 1;
             if (!out->damage_found) {
                 kill_time = out->streak_moment;

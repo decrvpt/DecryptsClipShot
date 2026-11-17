@@ -3,6 +3,7 @@
 ## 1.0.10
 
 - Kill streaks are now called **swag lines**, like trickshotters call them (in the app, and in screenshot names: "…_swag-lines.png").
+- Fireworks after a Victory Royale are no longer mistaken for damage numbers (a damage number is a short row of digits on its own, not part of a burst of bright pieces). ClipShot also searches a wider stretch of the clip for the kill, and looks for swag lines across that whole stretch if none show up right after the damage number.
 - The log now records, once a minute, how much CPU and memory each part of the recorder uses, to spot slowdowns in long sessions.
 - The rolling buffer (the last few minutes ClipShot keeps ready to save) is now deleted when you stop ClipShot, freeing several hundred MB, and cleared when recording starts, so footage from an earlier session can never end up in a new clip.
 
