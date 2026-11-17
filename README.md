@@ -2,7 +2,9 @@
 
 A Windows clipping app made for Fortnite. ClipShot keeps the last few minutes of your game ready to save. Press **F8** after a great moment, and when you win with a sniper or heavy-ammo shot, the trickshot is clipped automatically and titled with its distance.
 
-No OBS, accounts, API keys or subscriptions.
+Need a full session for YouTube? Press **F9** to start a long recording and **F9** again to save it.
+
+No OBS, no accounts, no subscriptions.
 
 ## Download
 
@@ -21,6 +23,7 @@ No OBS, accounts, API keys or subscriptions.
 2. **Open ClipShot → Settings → Optimize for my PC**, then **Save settings**. ClipShot tests your graphics card and picks smooth settings.
 3. **Click Start ClipShot** on the Dashboard, then launch Fortnite. Recording starts by itself when the game opens.
 4. **Press F8** after a great moment to save the last 90 seconds.
+5. **Press F9** to start a long recording (for YouTube videos or full sessions). Press **F9** again to stop and save it. You can also use the **Start long recording** button on the Dashboard.
 
 Fortnite in **Borderless Windowed** mode works best.
 
@@ -29,15 +32,13 @@ Fortnite in **Borderless Windowed** mode works best.
 Clips are saved in your **Videos** folder, under **Decrypt's ClipShot**. In the app, **My Clips** shows them in two groups:
 
 - **Trickshots**: Victory Royales where your final kill used any sniper or any heavy-ammo weapon (such as the Hand Cannon), titled with the distance (for example `184m_2026-09-01_19-47-36.mp4`).
-- **All clips**: everything you saved with F8, and automatic clips that didn't qualify as trickshots.
+- **All clips**: everything you saved with F8, long recordings (marked **Recordings**), and automatic clips that didn't qualify as trickshots.
 
 Double-click a clip to watch it. Select one and click **Rename** to rename it. You can choose another folder in **Settings → Storage**.
 
 ## Meter Checker
 
-Open any Fortnite replay to see its **Final Kill** and **Furthest Kill**: distance in meters, killer and victim (with platform), weapon and rarity. It works for friends' kills too. Click **Stop ClipShot** first so analysis can't affect a game in progress. Replays are read on your PC and never uploaded.
-
-Fortnite keeps replays in `%LOCALAPPDATA%\FortniteGame\Saved\Demos`.
+Open any Fortnite replay to see its **Final Kill** and **Furthest Kill**: distance in meters, killer and victim (with platform), weapon and rarity. It works for friends' kills too. For snipers it also shows whether the shot was scoped or a no-scope.
 
 ## Settings
 
@@ -53,26 +54,29 @@ Most players only need **Optimize for my PC**. The main options are:
 | Game volume | Game sound level in saved clips | 100% |
 | Record my microphone | Adds your voice to clips, with its own volume | Off |
 | Clip shortcut | The key that saves a clip | F8 |
+| Long recording shortcut | Starts and stops a long recording | F9 |
 
-Technical options (encoder, FFmpeg, buffer size) are under **Show advanced settings**.
+Extra options for experienced users are under **Show advanced settings**. You don't need to change them.
 
 ## Troubleshooting
 
 **Fortnite loses FPS while recording.** Click **Optimize for my PC**, choose 30 FPS, and try 720p.
 
-**Clips stutter.** Use Fortnite in Borderless Windowed mode. Try 30 FPS. If Activity mentions "compatibility capture", reinstall ClipShot.
+**Clips stutter.** Use Fortnite in Borderless Windowed mode. Try 30 FPS. If Activity says ClipShot switched to a slower recording method, reinstall ClipShot.
 
 **No sound in clips.** In Settings → Audio, turn on **Record game sound** and choose **Default Windows output**. If your game sound plays through a different headset or speaker, pick that device.
 
 **My voice isn't in clips.** Turn on **Record my microphone** in Settings → Audio, pick your mic, save, then stop and start ClipShot. If it still doesn't work, open Windows **Settings → Privacy & security → Microphone** and turn on **Let desktop apps access your microphone**.
 
+**Long recording won't start.** It starts once ClipShot is recording Fortnite, so open Fortnite first. If F9 does nothing, another app may be using that key: pick a different one in Settings.
+
 **An automatic clip stays in Pending.** ClipShot saved the video but couldn't confirm a trickshot from the replay, so it kept the clip to be safe. Make sure **Record Replays** is on in Fortnite. The Activity panel shows the reason.
 
-**Something else is wrong.** Run the setup again and choose **Fix ClipShot**. Settings are stored in `%LOCALAPPDATA%\Decrypts ClipShot\trickclip.ini`. Deleting that file resets every setting.
+**Something else is wrong.** Run the setup again and choose **Fix ClipShot**. If you report a problem, the file `clipshot_log.txt` in `%LOCALAPPDATA%\Decrypts ClipShot\work` helps explain what happened.
 
 ## Privacy
 
-- Replays are analyzed on your PC and never uploaded.
+- Nothing is uploaded. Your clips and replays stay on your PC.
 - ClipShot doesn't inject into Fortnite or read its memory. It records your screen and game sound like any screen recorder.
 - Your microphone is only recorded if you turn on **Record my microphone** in Settings → Audio.
 

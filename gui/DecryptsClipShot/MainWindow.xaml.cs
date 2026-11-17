@@ -25,6 +25,7 @@ public partial class MainWindow : Window
 {
     private const string DefaultOutputDevice = "Default Windows output";
     private const string SaveEventName = @"Local\DecryptsClipShot.Save";
+    private const string LongEventName = @"Local\DecryptsClipShot.LongRecord";
     private const string StopEventName = @"Local\DecryptsClipShot.Stop";
     private readonly ObservableCollection<ClipItem> _trickshotClips = [];
     private readonly ObservableCollection<ClipItem> _otherClips = [];
@@ -35,6 +36,10 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _timer;
     private Process? _engine;
     private DateTime? _captureStarted;
+    private DateTime? _longRecordStarted;
+    private bool _longRecordSaving;
+    private TextBox? _hotkeyTarget;
+    private Button? _hotkeyTargetButton;
     private bool _captureActive;
     private bool _loadingSettings;
     private bool _capturingHotkey;
@@ -236,7 +241,8 @@ public partial class MainWindow : Window
             ? Math.Clamp(micVolume, 0, 200)
             : 100;
         HotkeyBox.Text = ReadIni("controls", "manual_clip_hotkey", "F8");
-        HotkeyHintText.Text = $"{HotkeyBox.Text} saves a clip";
+        LongHotkeyBox.Text = ReadIni("controls", "long_recording_hotkey", "F9");
+        HotkeyHintText.Text = $"{HotkeyBox.Text} saves a clip  •  {LongHotkeyBox.Text} long recording";
         FortniteOnlyCheck.IsChecked = ReadIni("app", "start_only_with_fortnite", "1") == "1";
         LocalReplayCheck.IsChecked = ReadIni("local_replay", "enabled", "1") == "1";
         KeepRejectedCheck.IsChecked = ReadIni("app", "keep_rejected_clips", "1") == "1";
@@ -265,8 +271,8 @@ public partial class MainWindow : Window
             EncoderOptionsBox.Text = GetEncoderOptions(encoder, preset);
         EncoderOptionsBox.IsReadOnly = preset != "custom";
         PerformanceStatusText.Text = encoder == "libx264"
-            ? "CPU encoding is active. Use Optimize for gameplay to test available GPU encoders."
-            : $"Hardware encoding is configured with {encoder}.";
+            ? "Recording uses your processor. Click Optimize for my PC to let your graphics card do it instead (smoother games)."
+            : "Recording uses your graphics card, so your game stays smooth.";
         _loadingSettings = false;
         RefreshMetrics();
     }
@@ -358,6 +364,8 @@ public partial class MainWindow : Window
             ? "Stop recording. Clips you already saved are kept."
             : "Start recording. ClipShot waits for Fortnite, then keeps the last few minutes ready to save.";
         SaveClipButton.IsEnabled = engineOnline;
+        LongRecordButton.IsEnabled = recording && !_longRecordSaving;
+        if (!engineOnline) SetLongRecording(false);
         _captureActive = recording;
         if (recording && _captureStarted is null) _captureStarted = DateTime.Now;
         if (!recording) _captureStarted = null;
@@ -366,14 +374,16 @@ public partial class MainWindow : Window
     private void Timer_Tick(object? sender, EventArgs e)
     {
         ElapsedText.Text = _captureStarted is null ? "00:00:00" : (DateTime.Now - _captureStarted.Value).ToString(@"hh\:mm\:ss");
+        if (_longRecordStarted is not null)
+            LongRecordText.Text = "Long recording " + (DateTime.Now - _longRecordStarted.Value).ToString(@"hh\:mm\:ss");
         if (!_stoppingEngine && _engine is { HasExited: true })
         {
             int exitCode = _engine.ExitCode;
             _engine.Dispose();
             _engine = null;
             AddActivity(exitCode == 0
-                ? "Capture engine stopped"
-                : $"Capture engine stopped unexpectedly (exit code {exitCode})");
+                ? "ClipShot stopped"
+                : "ClipShot stopped unexpectedly. Click Start ClipShot to try again.");
             SetStatus("Engine offline", false, false);
         }
     }
@@ -385,7 +395,7 @@ public partial class MainWindow : Window
             _stoppingEngine = true;
             EngineButton.IsEnabled = false;
             SignalEvent(StopEventName);
-            AddActivity("Stopping capture engine");
+            AddActivity("Stopping ClipShot…");
             Process engine = _engine;
             try
             {
@@ -398,7 +408,7 @@ public partial class MainWindow : Window
                 {
                     engine.Kill(entireProcessTree: true);
                     await engine.WaitForExitAsync();
-                    AddActivity("Capture engine was force-stopped");
+                    AddActivity("ClipShot stopped");
                 }
             }
             finally
@@ -423,7 +433,7 @@ public partial class MainWindow : Window
 
         if (!File.Exists(EnginePath))
         {
-            MessageBox.Show("TrickClip.exe was not found beside the GUI. Run build_gui.bat first.", "Engine missing", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show("Part of ClipShot is missing. Reinstall ClipShot to fix it.", "ClipShot needs repair", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
@@ -446,7 +456,7 @@ public partial class MainWindow : Window
             _engine.BeginOutputReadLine();
             _engine.BeginErrorReadLine();
             SetStatus("Waiting for Fortnite", true, false);
-            AddActivity("Capture engine started");
+            AddActivity("ClipShot started");
             await Task.Delay(300);
         }
         catch (Exception ex)
@@ -454,7 +464,7 @@ public partial class MainWindow : Window
             _engine?.Dispose();
             _engine = null;
             SetStatus("Engine offline", false, false);
-            MessageBox.Show(ex.Message, "Could not start engine", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show("ClipShot couldn't start recording. Try restarting your PC, or reinstall ClipShot.\n\nDetails: " + ex.Message, "Couldn't start", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -464,24 +474,29 @@ public partial class MainWindow : Window
         Dispatcher.Invoke(() =>
         {
             string line = e.Data.Trim();
+            WriteEngineLog(line);
             if (line.StartsWith("RUNTIME|", StringComparison.OrdinalIgnoreCase))
             {
                 ApplyRuntimeProfile(line);
                 return;
             }
-            if (line.Contains("not enough frames to estimate rate", StringComparison.OrdinalIgnoreCase) ||
-                line.Contains("Non-monotonic DTS", StringComparison.OrdinalIgnoreCase) ||
-                line.Contains("non-strictly-monotonic PTS", StringComparison.OrdinalIgnoreCase))
+            if (line.StartsWith("LONG|", StringComparison.OrdinalIgnoreCase))
+            {
+                HandleLongRecordLine(line);
                 return;
+            }
 
-            AddActivity(line);
+            string? friendly = FriendlyEngineMessage(line);
+            if (friendly is not null) AddActivity(friendly);
             if (line.Contains("Capture started", StringComparison.OrdinalIgnoreCase))
                 SetStatus("Recording Fortnite", true, true);
             else if (line.Contains("Capture stopped", StringComparison.OrdinalIgnoreCase))
                 SetStatus("Waiting for Fortnite", true, false);
             else if (line.Contains("Fortnite detected", StringComparison.OrdinalIgnoreCase))
                 SetStatus("Fortnite detected", true, _captureActive);
-            else if (line.Contains("Saved clip", StringComparison.OrdinalIgnoreCase) || line.Contains("Qualified", StringComparison.OrdinalIgnoreCase))
+            else if (line.Contains("Saved clip", StringComparison.OrdinalIgnoreCase) ||
+                     line.Contains("Saved recording", StringComparison.OrdinalIgnoreCase) ||
+                     line.Contains("Qualified", StringComparison.OrdinalIgnoreCase))
                 _ = RefreshClipsAsync();
         });
     }
@@ -501,9 +516,8 @@ public partial class MainWindow : Window
         PerformanceStatusText.Text =
             $"Recording with {captureName} at {FpsMetric.Text}, {QualityMetric.Text.ToLowerInvariant()} quality.";
         CaptureSubtext.Text = $"Press {HotkeyBox.Text} to save the last {ClipLengthValueText.Text}";
-        AddActivity($"Recording started ({captureName}, engine {values.GetValueOrDefault("build", "unknown")})");
-        if (gdi)
-            AddActivity("Using compatibility capture, which can struggle at 60 FPS. Try 30 FPS if clips stutter.");
+                if (gdi)
+            AddActivity("Your PC is using a slower recording method. If clips stutter, try 30 FPS in Settings.");
     }
 
     private static void SignalEvent(string name)
@@ -521,7 +535,139 @@ public partial class MainWindow : Window
     private void SaveClip_Click(object sender, RoutedEventArgs e)
     {
         SignalEvent(SaveEventName);
-        AddActivity("Manual clip requested");
+        AddActivity("Saving clip…");
+    }
+
+    private void LongRecord_Click(object sender, RoutedEventArgs e) => ToggleLongRecording();
+
+    private void ToggleLongRecording()
+    {
+        if (_engine is not { HasExited: false } || _longRecordSaving) return;
+        if (_longRecordStarted is not null)
+        {
+            _longRecordSaving = true;
+            LongRecordButton.Content = "Saving…";
+            LongRecordButton.IsEnabled = false;
+        }
+        SignalEvent(LongEventName);
+    }
+
+    private void HandleLongRecordLine(string line)
+    {
+        string[] parts = line.Split('|', 3);
+        string state = parts.Length > 1 ? parts[1] : "";
+        if (state.Equals("started", StringComparison.OrdinalIgnoreCase))
+        {
+            SetLongRecording(true);
+            AddActivity($"Long recording started. Press {LongHotkeyBox.Text} or click Stop to save it.");
+            ShowTrayTip("Long recording started", $"Press {LongHotkeyBox.Text} again to stop and save.");
+        }
+        else if (state.Equals("stopped", StringComparison.OrdinalIgnoreCase))
+        {
+            SetLongRecording(false);
+            string path = parts.Length > 2 ? parts[2].Trim() : "";
+            if (path.Length > 0)
+            {
+                AddActivity($"Long recording saved: {Path.GetFileName(path)}");
+                ShowTrayTip("Long recording saved", "Find it in My Clips under Recordings.");
+                _ = RefreshClipsAsync();
+            }
+            else AddActivity("The long recording couldn't be saved.");
+        }
+        else if (state.Equals("unavailable", StringComparison.OrdinalIgnoreCase))
+        {
+            AddActivity("Long recording starts once ClipShot is recording Fortnite.");
+        }
+    }
+
+    private void SetLongRecording(bool active)
+    {
+        bool wasActive = _longRecordStarted is not null;
+        _longRecordStarted = active ? (_longRecordStarted ?? DateTime.Now) : null;
+        // While stopping, the engine joins the recording; keep the button busy until it reports back.
+        _longRecordSaving = false;
+        LongRecordBadge.Visibility = active ? Visibility.Visible : Visibility.Collapsed;
+        LongRecordText.Text = "Long recording 00:00:00";
+        LongRecordButton.Content = active ? "Stop long recording" : "Start long recording";
+        LongRecordButton.IsEnabled = _captureActive || active;
+        if (!active && wasActive && _engine is not { HasExited: false })
+            AddActivity("Long recording ended because ClipShot stopped.");
+    }
+
+    private void ShowTrayTip(string title, string text)
+    {
+        if (_trayIcon is null || !_trayIcon.Visible) return;
+        _trayIcon.ShowBalloonTip(3000, title, text, System.Windows.Forms.ToolTipIcon.Info);
+    }
+
+    // Full engine output is kept in a log file for troubleshooting; the Activity list only shows
+    // messages a player cares about, in plain words.
+    private void WriteEngineLog(string line)
+    {
+        try
+        {
+            string folder = ResolveConfiguredPath("folders", "work", "work");
+            Directory.CreateDirectory(folder);
+            string logPath = Path.Combine(folder, "clipshot_log.txt");
+            if (File.Exists(logPath) && new FileInfo(logPath).Length > 5 * 1024 * 1024)
+                File.Move(logPath, Path.Combine(folder, "clipshot_log_old.txt"), true);
+            File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss}  {line}{Environment.NewLine}");
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    private static string? FriendlyEngineMessage(string line)
+    {
+        static bool Has(string text, string part) => text.Contains(part, StringComparison.OrdinalIgnoreCase);
+        static bool Starts(string text, string part) => text.StartsWith(part, StringComparison.OrdinalIgnoreCase);
+
+        if (Starts(line, "Saved clip:")) return $"Clip saved: {Path.GetFileName(line[11..].Trim())}";
+        if (Starts(line, "Saved recording:") || Starts(line, "Long recording started")) return null; // shown by the LONG| lines
+        if (Has(line, "Qualified trickshot"))
+        {
+            int open = line.IndexOf('('), close = line.IndexOf(')');
+            return open >= 0 && close > open ? $"Trickshot saved! {line[(open + 1)..close].Replace(" final kill, ", ", ")}" : "Trickshot saved!";
+        }
+        if (Starts(line, "Capture started")) return "Recording Fortnite";
+        if (Starts(line, "Capture stopped")) return "Recording paused";
+        if (Starts(line, "Fortnite detected")) return "Fortnite opened";
+        if (Starts(line, "Fortnite closed")) return "Fortnite closed";
+        if (Starts(line, "Completed match replay detected")) return "Match finished, checking for a trickshot…";
+        if (Has(line, "did not qualify")) return "Not a trickshot this time";
+        if (Starts(line, "Replay analysis:") || Has(line, "analysis was inconclusive") ||
+            Has(line, "analysis failed") || Has(line, "result could not be read"))
+            return Has(line, "failed") || Has(line, "could not") || Has(line, "inconclusive")
+                ? "Couldn't check this match. The clip was kept in Pending."
+                : null;
+        if (Has(line, "replay parser is missing") || Has(line, "Audio helper is missing"))
+            return "Part of ClipShot is missing. Reinstall ClipShot to fix it.";
+        if (Has(line, "encoder is falling behind"))
+            return "Your PC is struggling to record. Try Optimize for my PC or 30 FPS in Settings.";
+        if (Has(line, "Desktop Duplication was unavailable"))
+            return "Switched to a slower recording method for your PC.";
+        if (Has(line, "could not be registered") || Has(line, "could not be set up for long recording"))
+            return line.Replace("Warning: ", "").Replace("could not be registered; GUI controls remain available.",
+                "is used by another app. Pick a different shortcut in Settings.");
+        if (Has(line, "Audio capture could not restart") || Has(line, "recorder stopped unexpectedly") ||
+            Has(line, "audio recorder could not start"))
+            return "Sound recording hiccuped. ClipShot is fixing it.";
+        if (Has(line, "Audio capture restarted")) return "Sound recording is back.";
+        if (Has(line, "Audio capture: disabled or no configured audio source"))
+            return "No sound is being recorded. Check Sound settings.";
+        if (Has(line, "saving video only") || Has(line, "saving this clip as video only") || Has(line, "saving it without audio"))
+            return "This clip was saved without sound.";
+        if (Has(line, "FFmpeg could not") || Has(line, "capture could not start"))
+            return "Something went wrong while saving. Try again, or restart ClipShot.";
+        if (Has(line, "No rolling video segment") || Has(line, "No completed segment"))
+            return "Nothing recorded yet. Wait a few seconds and try again.";
+        if (Starts(line, "Saving long recording")) return "Saving long recording… long sessions can take a minute.";
+        if (Has(line, "long recording was too short")) return "The long recording was too short to save.";
+        if (Has(line, "long recording couldn't be saved")) return null; // reported by the LONG| line
+        if (Has(line, "Another ClipShot engine is already running"))
+            return "ClipShot is already running.";
+        // Everything else (timing checks, file steps, start-up details) only goes to the log file.
+        return null;
     }
 
     private void ClearActivity_Click(object sender, RoutedEventArgs e)
@@ -730,9 +876,14 @@ public partial class MainWindow : Window
             return false;
         }
 
-        if (string.IsNullOrWhiteSpace(HotkeyBox.Text))
+        if (string.IsNullOrWhiteSpace(HotkeyBox.Text) || string.IsNullOrWhiteSpace(LongHotkeyBox.Text))
         {
-            MessageBox.Show("Choose a manual clip shortcut before saving.", "Invalid shortcut", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show("Choose a shortcut for saving clips and for long recording.", "Shortcut needed", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return false;
+        }
+        if (string.Equals(HotkeyBox.Text.Trim(), LongHotkeyBox.Text.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            MessageBox.Show("The clip shortcut and the long recording shortcut must be different keys.", "Same shortcut twice", MessageBoxButton.OK, MessageBoxImage.Warning);
             return false;
         }
         if (GameAudioCheck.IsChecked == true && string.IsNullOrWhiteSpace(GameAudioDeviceBox.Text))
@@ -774,7 +925,8 @@ public partial class MainWindow : Window
         WriteIni("recording", "audio_helper_path", "ClipShotAudio.exe");
         WriteIni("folders", "clips", clipsFolder);
         WriteIni("controls", "manual_clip_hotkey", HotkeyBox.Text.Trim());
-        HotkeyHintText.Text = $"{HotkeyBox.Text.Trim()} saves a clip";
+        WriteIni("controls", "long_recording_hotkey", LongHotkeyBox.Text.Trim());
+        HotkeyHintText.Text = $"{HotkeyBox.Text.Trim()} saves a clip  •  {LongHotkeyBox.Text.Trim()} long recording";
         WriteIni("app", "start_only_with_fortnite", FortniteOnlyCheck.IsChecked == true ? "1" : "0");
         WriteIni("local_replay", "enabled", LocalReplayCheck.IsChecked == true ? "1" : "0");
         WriteIni("app", "keep_rejected_clips", KeepRejectedCheck.IsChecked == true ? "1" : "0");
@@ -787,9 +939,9 @@ public partial class MainWindow : Window
         }
         RefreshMetrics();
         _ = RefreshClipsAsync();
-        AddActivity(showConfirmation ? "Settings saved" : "Current settings applied before engine start");
+        if (showConfirmation) AddActivity("Settings saved");
         if (showConfirmation)
-            MessageBox.Show($"Settings saved to:\n{IniPath}\n\nRestart the capture engine to apply recording changes.", "Decrypt's ClipShot", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show("Settings saved.\n\nIf ClipShot is running, stop and start it again to use the new recording settings.", "Decrypt's ClipShot", MessageBoxButton.OK, MessageBoxImage.Information);
         return true;
     }
 
@@ -831,7 +983,7 @@ public partial class MainWindow : Window
     {
         string ffmpeg = ResolveFfmpegExecutable();
         FfmpegPathBox.Text = ffmpeg;
-        PerformanceStatusText.Text = "Testing available hardware encoders...";
+        PerformanceStatusText.Text = "Checking your PC…";
         string? encoder = await DetectWorkingHardwareEncoderAsync(ffmpeg);
         EncoderBox.SelectedIndex = encoder switch
         {
@@ -849,17 +1001,14 @@ public partial class MainWindow : Window
         }
         EncoderOptionsBox.Text = GetEncoderOptions(ComboValue(EncoderBox, "libx264"), preset);
         PerformanceStatusText.Text = encoder is null
-            ? "No working GPU encoder was found. CPU encoding is configured."
-            : $"Detected and tested {encoder}; hardware encoding is ready.";
-        AddActivity(encoder is null
-            ? "FFmpeg configured with CPU encoding"
-            : $"FFmpeg configured with {encoder}");
+            ? "Recording will use your processor."
+            : "Recording will use your graphics card, so your game stays smooth.";
     }
 
     private async void OptimizeForGameplay_Click(object sender, RoutedEventArgs e)
     {
         OptimizePerformanceButton.IsEnabled = false;
-        PerformanceStatusText.Text = "Testing GPU encoders. This can take a few seconds...";
+        PerformanceStatusText.Text = "Checking your PC. This takes a few seconds…";
         try
         {
             string ffmpeg = ResolveFfmpegExecutable();
@@ -881,13 +1030,13 @@ public partial class MainWindow : Window
             {
                 FpsBox.Text = "30";
                 ResolutionBox.SelectedIndex = 2;
-                PerformanceStatusText.Text = "No working GPU encoder was found. Prepared CPU ultrafast at 720p/30 FPS with lower recorder priority. Save settings and restart the engine.";
+                PerformanceStatusText.Text = "Your graphics card couldn't record, so ClipShot picked lighter settings (720p, 30 FPS). Click Save, then restart ClipShot.";
             }
             else
             {
                 FpsBox.Text = "60";
                 ResolutionBox.SelectedIndex = 1;
-                PerformanceStatusText.Text = $"Prepared tested {encoder} hardware encoding at up to 1080p/60 FPS with the restored DXGI video profile. Save settings and restart the engine.";
+                PerformanceStatusText.Text = $"Your graphics card ({encoder}) will do the recording, so your game stays smooth. Click Save, then restart ClipShot.";
             }
 
             string selectedEncoder = ComboValue(EncoderBox, "libx264");
@@ -950,7 +1099,7 @@ public partial class MainWindow : Window
     {
         string gameSelection = GameAudioDeviceBox.Text;
         string micSelection = MicrophoneDeviceBox.Text;
-        AudioDeviceStatusText.Text = "Scanning Windows playback devices...";
+        AudioDeviceStatusText.Text = "Looking for your speakers and headsets…";
         AudioDeviceScan detected;
 
         try
@@ -959,7 +1108,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AudioDeviceStatusText.Text = "Automatic Windows audio is unavailable. Reinstall ClipShot so ClipShotAudio.exe is included.";
+            AudioDeviceStatusText.Text = "Part of ClipShot is missing, so sound can't be set up. Reinstall ClipShot to fix it.";
             if (showResult)
                 MessageBox.Show(ex.Message, "Could not scan audio devices", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
@@ -1044,15 +1193,21 @@ public partial class MainWindow : Window
         }
         catch (OperationCanceledException)
         {
-            AudioDeviceStatusText.Text = "Windows audio device scanning timed out.";
+            AudioDeviceStatusText.Text = "Couldn't list your sound devices. Default will still work.";
         }
     }
 
-    private void CaptureHotkey_Click(object sender, RoutedEventArgs e)
+    private void CaptureHotkey_Click(object sender, RoutedEventArgs e) => BeginHotkeyCapture(HotkeyBox, HotkeyCaptureButton);
+    private void CaptureLongHotkey_Click(object sender, RoutedEventArgs e) => BeginHotkeyCapture(LongHotkeyBox, LongHotkeyCaptureButton);
+
+    private void BeginHotkeyCapture(TextBox target, Button button)
     {
+        if (_hotkeyTargetButton is not null) _hotkeyTargetButton.Content = "Set shortcut";
         _capturingHotkey = true;
-        HotkeyCaptureButton.Content = "Press shortcut...";
-        Keyboard.Focus(HotkeyCaptureButton);
+        _hotkeyTarget = target;
+        _hotkeyTargetButton = button;
+        button.Content = "Press a key...";
+        Keyboard.Focus(button);
     }
 
     private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -1068,7 +1223,7 @@ public partial class MainWindow : Window
             MessageBox.Show("Use F1–F24, A–Z, 0–9, Space, Insert, Delete, Home, End, Page Up, or Page Down.",
                 "Unsupported shortcut", MessageBoxButton.OK, MessageBoxImage.Warning);
             _capturingHotkey = false;
-            HotkeyCaptureButton.Content = "Set shortcut";
+            if (_hotkeyTargetButton is not null) _hotkeyTargetButton.Content = "Set shortcut";
             e.Handled = true;
             return;
         }
@@ -1080,10 +1235,10 @@ public partial class MainWindow : Window
         if (modifiers.HasFlag(ModifierKeys.Shift)) parts.Add("Shift");
         if (modifiers.HasFlag(ModifierKeys.Windows)) parts.Add("Win");
         parts.Add(keyName);
-        HotkeyBox.Text = string.Join("+", parts);
-        HotkeyHintText.Text = $"{HotkeyBox.Text} saves a clip";
+        (_hotkeyTarget ?? HotkeyBox).Text = string.Join("+", parts);
+        HotkeyHintText.Text = $"{HotkeyBox.Text} saves a clip  •  {LongHotkeyBox.Text} long recording";
         _capturingHotkey = false;
-        HotkeyCaptureButton.Content = "Set shortcut";
+        if (_hotkeyTargetButton is not null) _hotkeyTargetButton.Content = "Set shortcut";
         e.Handled = true;
     }
 
@@ -1288,7 +1443,7 @@ public partial class MainWindow : Window
         };
         if (dialog.ShowDialog() != true) return;
         ReplayPathBox.Text = dialog.FileName;
-        ReplayAnalysisStatusText.Text = "Ready to analyze locally.";
+        ReplayAnalysisStatusText.Text = "Ready.";
         ReplayResultCard.Visibility = Visibility.Collapsed;
     }
 
@@ -1305,18 +1460,18 @@ public partial class MainWindow : Window
         string replayPath = ReplayPathBox.Text.Trim();
         if (!File.Exists(replayPath))
         {
-            ReplayAnalysisStatusText.Text = "Choose an existing .replay file first.";
+            ReplayAnalysisStatusText.Text = "Choose a replay first.";
             return;
         }
         if (!File.Exists(ReplayParserPath))
         {
-            ReplayAnalysisStatusText.Text = "The local replay parser is missing. Rebuild or reinstall ClipShot.";
+            ReplayAnalysisStatusText.Text = "Part of ClipShot is missing. Reinstall ClipShot to fix it.";
             return;
         }
 
         AnalyzeReplayButton.IsEnabled = false;
         ReplayResultCard.Visibility = Visibility.Collapsed;
-        ReplayAnalysisStatusText.Text = "Analyzing the replay locally… large replays can take a minute.";
+        ReplayAnalysisStatusText.Text = "Checking the replay… long matches can take a minute.";
         string analysisFolder = Path.Combine(UserDataDirectory, "replay-analysis");
         Directory.CreateDirectory(analysisFolder);
         string resultPath = Path.Combine(analysisFolder, $"result-{Guid.NewGuid():N}.json");
@@ -1348,17 +1503,18 @@ public partial class MainWindow : Window
 
             using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(resultPath));
             ShowReplayResult(document.RootElement);
-            AddActivity($"Older replay analyzed: {Path.GetFileName(replayPath)}");
+            AddActivity("Replay checked");
         }
         catch (OperationCanceledException)
         {
             if (parser is { HasExited: false }) parser.Kill(entireProcessTree: true);
-            ReplayAnalysisStatusText.Text = "Analysis timed out. The replay may be incomplete or from an unsupported Fortnite version.";
+            ReplayAnalysisStatusText.Text = "This replay took too long to read. It may be unfinished or from an older Fortnite season.";
         }
         catch (Exception exception)
         {
-            ReplayAnalysisStatusText.Text = $"Analysis failed: {exception.Message}";
-            AddActivity("Older replay analysis failed");
+            _ = exception;
+            ReplayAnalysisStatusText.Text = "ClipShot couldn't read this replay. It may be unfinished or from an older Fortnite season.";
+            AddActivity("Couldn't read that replay");
         }
         finally
         {
@@ -1398,8 +1554,8 @@ public partial class MainWindow : Window
         FinalKillCard.Margin = haveFurthest ? new Thickness(0, 0, 8, 0) : new Thickness(0);
 
         ReplayAnalysisStatusText.Text = haveFinal && distanceUU > 0
-            ? "Distances calculated from the local replay."
-            : JsonText(root, "reason", "The replay did not contain a measured elimination distance.");
+            ? "Done."
+            : "This replay doesn't have an elimination ClipShot could measure.";
         ReplayResultCard.Visibility = haveFinal || haveFurthest ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -1488,12 +1644,9 @@ public partial class MainWindow : Window
             : [];
         bool known = kill.TryGetProperty("weaponKnown", out JsonElement knownValue) &&
                      knownValue.ValueKind == JsonValueKind.True;
-        string header = known
-            ? "Fortnite's weapon tags for this kill:"
-            : "This weapon isn't in ClipShot's weapon list yet, so only its type is shown.\nFortnite's weapon tags for this kill:";
-        weapon.ToolTip = tags.Length == 0
-            ? "The replay didn't include weapon details for this kill."
-            : header + "\n" + string.Join("\n", tags);
+        _ = tags;
+        weapon.ToolTip = known ? null
+            : "ClipShot doesn't recognize this weapon yet. Use \"Name this weapon\" to teach it.";
         string key = JsonText(kill, "weaponKey", "");
         nameWeapon.Visibility = !known && key.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         nameWeapon.Tag = (key, weapon.Text);
@@ -1596,8 +1749,9 @@ public partial class MainWindow : Window
         menu.Items.Add("Save Clip", null, (_, _) => Dispatcher.Invoke(() =>
         {
             SignalEvent(SaveEventName);
-            AddActivity("Manual clip requested from system tray");
+            AddActivity("Saving clip…");
         }));
+        menu.Items.Add("Start / stop long recording", null, (_, _) => Dispatcher.Invoke(ToggleLongRecording));
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => Dispatcher.Invoke(Close));
         _trayIcon = new System.Windows.Forms.NotifyIcon

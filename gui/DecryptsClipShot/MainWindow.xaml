@@ -147,10 +147,17 @@
                                         <TextBlock x:Name="ElapsedText" Text="00:00:00" FontSize="40" FontWeight="Light"/>
                                         <TextBlock Text="recording time" Foreground="{StaticResource MutedBrush}" FontSize="12" VerticalAlignment="Bottom" Margin="12,0,0,10"/>
                                     </StackPanel>
+                                    <Border x:Name="LongRecordBadge" Visibility="Collapsed" Background="#33EF5555" CornerRadius="8" Padding="12,6" Margin="0,10,0,0" HorizontalAlignment="Left">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse Width="9" Height="9" Fill="#EF5555" VerticalAlignment="Center"/>
+                                            <TextBlock x:Name="LongRecordText" Text="Long recording 00:00:00" Margin="8,0,0,0" FontWeight="SemiBold"/>
+                                        </StackPanel>
+                                    </Border>
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="20,0,0,0">
                                     <Button x:Name="EngineButton" Content="Start ClipShot" ToolTip="Start recording" MinWidth="210" Padding="24,15" FontSize="16" Style="{StaticResource PrimaryButton}" Click="EngineButton_Click"/>
                                     <Button x:Name="SaveClipButton" Content="Save clip now" Style="{StaticResource SecondaryButton}" MinWidth="210" Padding="24,11" Margin="0,10,0,0" Click="SaveClip_Click" IsEnabled="False"/>
+                                    <Button x:Name="LongRecordButton" Content="Start long recording" ToolTip="Record everything until you stop, for YouTube videos and longer sessions" Style="{StaticResource SecondaryButton}" MinWidth="210" Padding="24,11" Margin="0,10,0,0" Click="LongRecord_Click" IsEnabled="False"/>
                                 </StackPanel>
                             </Grid>
                         </Border>
@@ -257,7 +264,7 @@
                                 <ListBox x:Name="OtherClipsList" Background="Transparent" BorderThickness="0" SelectionChanged="ClipList_SelectionChanged" MouseDoubleClick="ClipList_MouseDoubleClick" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled" ItemTemplate="{StaticResource ClipCardTemplate}">
                                     <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ListBox.ItemsPanel>
                                 </ListBox>
-                                <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12.5" Margin="0,4,0,18" Text="Nothing here yet. Press your clip shortcut while playing to save the last moments of gameplay.">
+                                <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12.5" Margin="0,4,0,18" Text="Nothing here yet. Press your clip shortcut while playing to save the last moments, or use long recording for full sessions.">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
                                             <Setter Property="Visibility" Value="Collapsed"/>
@@ -286,7 +293,7 @@
                                 <TextBlock Text="The replay stays on this computer. ClipShot does not upload it and no API key is needed." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,6,0,14"/>
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                    <TextBox x:Name="ReplayPathBox" Style="{StaticResource InputStyle}" IsReadOnly="True" ToolTip="Fortnite replays are normally stored under Local AppData\FortniteGame\Saved\Demos."/>
+                                    <TextBox x:Name="ReplayPathBox" Style="{StaticResource InputStyle}" IsReadOnly="True" ToolTip="Where Fortnite keeps your match replays."/>
                                     <Button Grid.Column="1" Content="Choose replay" Style="{StaticResource SecondaryButton}" Click="BrowseReplay_Click" Margin="10,0,0,0"/>
                                     <Button x:Name="AnalyzeReplayButton" Grid.Column="2" Content="Analyze" Style="{StaticResource PrimaryButton}" Click="AnalyzeReplay_Click" Margin="8,0,0,0"/>
                                 </Grid>
@@ -337,7 +344,7 @@
                                         <Grid>
                                             <TextBlock Text="Shot" Foreground="{StaticResource MutedBrush}" FontSize="13"/>
                                             <TextBlock x:Name="FinalKillShotText" Text="—" Foreground="{StaticResource TextBrush}" FontSize="13" HorizontalAlignment="Right" Margin="90,0,0,0" TextAlignment="Right"
-                                                       ToolTip="For snipers: whether the shooter was aiming down sights in the moment before the kill, read from the replay."/>
+                                                       ToolTip="For snipers: whether the shot was scoped in or a no-scope."/>
                                         </Grid>
                                     </Border>
                                     <Border Padding="0,9">
@@ -386,7 +393,7 @@
                                         <Grid>
                                             <TextBlock Text="Shot" Foreground="{StaticResource MutedBrush}" FontSize="13"/>
                                             <TextBlock x:Name="FurthestKillShotText" Text="—" Foreground="{StaticResource TextBrush}" FontSize="13" HorizontalAlignment="Right" Margin="90,0,0,0" TextAlignment="Right"
-                                                       ToolTip="For snipers: whether the shooter was aiming down sights in the moment before the kill, read from the replay."/>
+                                                       ToolTip="For snipers: whether the shot was scoped in or a no-scope."/>
                                         </Grid>
                                     </Border>
                                     <Border Padding="0,9">
@@ -453,7 +460,7 @@
                                     <TextBlock Text="Clip library folder" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/>
                                     <Grid>
                                         <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                        <TextBox x:Name="ClipFolderBox" Style="{StaticResource InputStyle}" IsReadOnly="True" ToolTip="Manual, pending, trickshot, and rejected clips are stored under this folder."/>
+                                        <TextBox x:Name="ClipFolderBox" Style="{StaticResource InputStyle}" IsReadOnly="True" ToolTip="Where your clips and recordings are saved."/>
                                         <Button Grid.Column="1" Content="Choose folder" Style="{StaticResource SecondaryButton}" Click="BrowseClipFolder_Click" Margin="10,0,0,0"/>
                                     </Grid>
                                     <TextBlock Text="Changing this location affects new clips. Existing clips are not moved automatically." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,10,0,0" TextWrapping="Wrap"/>
@@ -463,7 +470,7 @@
                             <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="22" Margin="0,0,0,16">
                                 <StackPanel>
                                     <Grid Margin="0,0,0,16"><TextBlock Text="Audio" FontSize="17" FontWeight="SemiBold"/><Button Content="Refresh devices" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Right" Click="RefreshAudioDevices_Click"/></Grid>
-                                    <StackPanel><CheckBox x:Name="GameAudioCheck" Content="Record game sound" Foreground="White" FontWeight="SemiBold" Margin="0,0,0,8"/><TextBlock Text="Sound device (leave on Default unless your game sound uses another headset or speaker)" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/><ComboBox x:Name="GameAudioDeviceBox" Style="{StaticResource DarkComboBoxStyle}" IsEditable="False" ToolTip="ClipShot captures this playback device through Windows WASAPI loopback."/></StackPanel>
+                                    <StackPanel><CheckBox x:Name="GameAudioCheck" Content="Record game sound" Foreground="White" FontWeight="SemiBold" Margin="0,0,0,8"/><TextBlock Text="Sound device (leave on Default unless your game sound uses another headset or speaker)" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/><ComboBox x:Name="GameAudioDeviceBox" Style="{StaticResource DarkComboBoxStyle}" IsEditable="False" ToolTip="The speakers or headset your game sound plays through."/></StackPanel>
                                     <DockPanel Margin="0,18,0,2">
                                         <TextBlock x:Name="VolumeValueText" DockPanel.Dock="Right" Text="100%" FontSize="13" FontWeight="SemiBold"/>
                                         <TextBlock Text="Game volume" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
@@ -501,9 +508,11 @@
                                     <TextBlock Text="Controls and automation" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,16"/>
                                     <TextBlock Text="Manual clip shortcut" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/>
                                     <Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="HotkeyBox" Style="{StaticResource InputStyle}" IsReadOnly="True"/><Button x:Name="HotkeyCaptureButton" Grid.Column="1" Content="Set shortcut" Style="{StaticResource SecondaryButton}" Click="CaptureHotkey_Click" Margin="10,0,0,0"/></Grid>
+                                    <TextBlock Text="Long recording shortcut (press once to start, again to stop)" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/>
+                                    <Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="LongHotkeyBox" Style="{StaticResource InputStyle}" IsReadOnly="True"/><Button x:Name="LongHotkeyCaptureButton" Grid.Column="1" Content="Set shortcut" Style="{StaticResource SecondaryButton}" Click="CaptureLongHotkey_Click" Margin="10,0,0,0"/></Grid>
                                     <CheckBox x:Name="FortniteOnlyCheck" Content="Start recording only when Fortnite is running" Foreground="White" Margin="0,4"/>
-                                    <CheckBox x:Name="LocalReplayCheck" Content="Analyze completed replays locally (no API or upload)" Foreground="White" Margin="0,8,0,4"/>
-                                    <TextBlock Text="Local analysis checks placement, final-kill weapon tags, and distance after the match." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="22,0,0,5" TextWrapping="Wrap"/>
+                                    <CheckBox x:Name="LocalReplayCheck" Content="Check each match for trickshots automatically" Foreground="White" Margin="0,8,0,4"/>
+                                    <TextBlock Text="After a win, ClipShot checks the final kill and keeps the clip if it was a trickshot." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="22,0,0,5" TextWrapping="Wrap"/>
                                     <CheckBox x:Name="KeepRejectedCheck" Content="Keep clips that do not qualify" Foreground="White" Margin="0,4"/>
                                     <CheckBox x:Name="MinimizeToTrayCheck" Content="Minimize ClipShot to the system tray" Foreground="White" Margin="0,8,0,4"/>
                                     <TextBlock Text="When enabled, the minimize button hides ClipShot while capture continues. Double-click the tray icon to restore it." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="22,0,0,0" TextWrapping="Wrap"/>

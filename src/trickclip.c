@@ -42,6 +42,9 @@
    cut can begin on the preceding keyframe (GOP is two seconds). */
 #define KEYFRAME_MARGIN_SECONDS 2
 #define HOTKEY_SAVE 1
+#define HOTKEY_LONG 2
+#define LONG_EVENT_NAME L"Local\\DecryptsClipShot.LongRecord"
+#define LONG_COLLECT_MS 2000ULL
 #define FORTNITE_PROCESS L"FortniteClient-Win64-Shipping.exe"
 #define SAVE_EVENT_NAME L"Local\\DecryptsClipShot.Save"
 #define STOP_EVENT_NAME L"Local\\DecryptsClipShot.Stop"
@@ -55,6 +58,7 @@ typedef struct {
     wchar_t work_dir[PATH_CAP];
     wchar_t game_audio_device[512];
     wchar_t manual_hotkey[128];
+    wchar_t long_hotkey[128];
     wchar_t capture_backend[64];
     wchar_t video_encoder[128];
     wchar_t video_options[1024];
@@ -324,6 +328,8 @@ static void load_config(AppConfig *config)
                  L"Default Windows output");
     load_ini_string(ini, L"controls", L"manual_clip_hotkey", L"F8",
                     config->manual_hotkey, ARRAY_COUNT(config->manual_hotkey));
+    load_ini_string(ini, L"controls", L"long_recording_hotkey", L"F9",
+                    config->long_hotkey, ARRAY_COUNT(config->long_hotkey));
 
     load_ini_string(ini, L"folders", L"buffer", L"buffer", relative, ARRAY_COUNT(relative));
     join_path(config->buffer_dir, ARRAY_COUNT(config->buffer_dir), config->base_dir, relative);
@@ -1448,6 +1454,189 @@ static size_t segments_needed(double seconds, int segment_seconds)
      video span. Previously both were cut with -sseof and aligned at their
      tails, which assumed both tails were "now" and ignored the keyframe
      pre-roll that stream-copy cutting adds (0-2 s of audio offset). */
+/* Joins the parts in a snapshot folder (part_NNN.mkv, audio_part_NNN.mka),
+   cuts the last clip_seconds (ending skip seconds before the tail when a
+   target end is given), aligns audio to the exact video span and writes
+   the final MP4 into clips\<category>. Shared by normal clips and long
+   recordings. Removes the snapshot folder on success. */
+static int assemble_clip(const AppConfig *config, const wchar_t *snapshot,
+                         size_t video_wanted, size_t audio_wanted,
+                         double video_tail_ms, double audio_tail_ms, int tails_known,
+                         int running, const TimingSnapshot *timing,
+                         double clip_seconds, double target_end_ms, double skip_estimate,
+                         const wchar_t *category, const wchar_t *timestamp,
+                         wchar_t *saved_path, size_t saved_count)
+{
+    double joined_seconds = 0.0, video_seconds = 0.0, audio_seconds = 0.0;
+    double skip = 0.0, start_v, end_v, tail_gap = 0.0;
+    wchar_t path[PATH_CAP];
+    wchar_t log_path[PATH_CAP];
+    wchar_t category_dir[PATH_CAP];
+    wchar_t command[COMMAND_CAP];
+    const wchar_t *video_file = L"joined.mkv";
+    DWORD exit_code = 1;
+    int has_audio = 0;
+    /* Long recordings can be hours long; give FFmpeg time proportional to length. */
+    DWORD work_timeout = 60000 + (DWORD)(clip_seconds * 200.0);
+
+    join_path(category_dir, PATH_CAP, config->clips_dir, category);
+    ensure_directory(category_dir);
+    swprintf_s(log_path, ARRAY_COUNT(log_path), L"%ls\\save_ffmpeg.log", snapshot);
+
+    if (!write_concat(snapshot, L"concat.txt", "part", "mkv", video_wanted)) {
+        remove_snapshot(snapshot, video_wanted, audio_wanted);
+        return 0;
+    }
+
+    swprintf_s(command, ARRAY_COUNT(command),
+               L"\"%ls\" -hide_banner -loglevel warning -y -fflags +genpts "
+               L"-f concat -safe 0 -i concat.txt -map 0:v:0 -an "
+               L"-c:v copy -avoid_negative_ts make_zero joined.mkv", config->ffmpeg_path);
+    wprintf(L"Joining video buffer segments with FFmpeg.\n");
+    if (!run_process_wait_logged(command, snapshot, work_timeout, &exit_code, log_path) || exit_code != 0) {
+        wprintf(L"FFmpeg could not join the video buffer segments. Details: %ls\n", log_path);
+        wprintf(L"The failed snapshot was kept for troubleshooting: %ls\n", snapshot);
+        return 0;
+    }
+    swprintf_s(path, ARRAY_COUNT(path), L"%ls\\joined.mkv", snapshot);
+    if (!probe_duration(config, snapshot, path, &joined_seconds)) joined_seconds = 0.0;
+
+    if (audio_wanted > 0 && write_concat(snapshot, L"audio_concat.txt", "audio_part", "mka",
+                                         audio_wanted)) {
+        swprintf_s(command, ARRAY_COUNT(command),
+                   L"\"%ls\" -hide_banner -loglevel warning -y -fflags +genpts "
+                   L"-f concat -safe 0 -i audio_concat.txt -map 0:a:0 "
+                   L"-af \"asetpts=N/SR/TB\" -c:a pcm_s16le "
+                   L"joined_audio.mka", config->ffmpeg_path);
+        wprintf(L"Joining independent audio buffer segments with FFmpeg.\n");
+        swprintf_s(path, ARRAY_COUNT(path), L"%ls\\joined_audio.mka", snapshot);
+        if (run_process_wait_logged(command, snapshot, work_timeout, &exit_code, log_path) &&
+            exit_code == 0 && probe_duration(config, snapshot, path, &audio_seconds))
+            has_audio = 1;
+        else
+            wprintf(L"Independent audio assembly failed; saving this clip as video only. Details: %ls\n",
+                    log_path);
+    } else if (config->capture_game_audio || config->capture_microphone) {
+        wprintf(L"No independent audio segment was available; saving video only.\n");
+    }
+
+    /* How much of the buffer tail lies after the requested clip end. */
+    if (target_end_ms > 0.0) {
+        if (video_tail_ms > 0.0)
+            skip = (video_tail_ms - target_end_ms) / 1000.0 -
+                   (timing->have_video ? timing->video_drift_ms / 1000.0 : 0.0);
+        else
+            skip = skip_estimate;
+        if (skip < 0.0) skip = 0.0;
+    }
+
+    if (joined_seconds > 0.0) {
+        end_v = joined_seconds - skip;
+        if (end_v < 1.0) {
+            end_v = joined_seconds;
+            skip = 0.0;
+        }
+        start_v = end_v - clip_seconds;
+        if (start_v < 0.0) start_v = 0.0;
+        video_seconds = joined_seconds;
+        if (start_v > 0.05 || skip > 0.05) {
+            swprintf_s(command, ARRAY_COUNT(command),
+                       L"\"%ls\" -hide_banner -loglevel warning -y "
+                       L"-ss %.3f -t %.3f -i joined.mkv -map 0:v:0 -c:v copy "
+                       L"-avoid_negative_ts make_zero trimmed.mkv",
+                       config->ffmpeg_path, start_v, end_v - start_v);
+            swprintf_s(path, ARRAY_COUNT(path), L"%ls\\trimmed.mkv", snapshot);
+            if (run_process_wait_logged(command, snapshot, work_timeout, &exit_code, log_path) &&
+                exit_code == 0 && probe_duration(config, snapshot, path, &video_seconds)) {
+                video_file = L"trimmed.mkv";
+                /* A stream-copy cut can start at the next keyframe instead of
+                   the previous one; if the clip came out short, cut again
+                   from one GOP earlier. The end point is unaffected. */
+                if (video_seconds < clip_seconds - 0.25 && start_v > 0.0) {
+                    double retry_seconds = 0.0;
+                    start_v -= KEYFRAME_MARGIN_SECONDS;
+                    if (start_v < 0.0) start_v = 0.0;
+                    swprintf_s(command, ARRAY_COUNT(command),
+                               L"\"%ls\" -hide_banner -loglevel warning -y "
+                               L"-ss %.3f -t %.3f -i joined.mkv -map 0:v:0 -c:v copy "
+                               L"-avoid_negative_ts make_zero trimmed.mkv",
+                               config->ffmpeg_path, start_v, end_v - start_v);
+                    if (run_process_wait_logged(command, snapshot, work_timeout, &exit_code, log_path) &&
+                        exit_code == 0 && probe_duration(config, snapshot, path, &retry_seconds))
+                        video_seconds = retry_seconds;
+                    else {
+                        video_file = L"joined.mkv";
+                        video_seconds = joined_seconds;
+                        skip = 0.0;
+                    }
+                }
+            } else {
+                wprintf(L"Could not trim the clip precisely; keeping the full snapshot.\n");
+                video_seconds = joined_seconds;
+                skip = 0.0;
+            }
+        }
+    } else {
+        wprintf(L"Could not measure the joined video; saving it without audio alignment.\n");
+        has_audio = 0;
+    }
+
+    swprintf_s(saved_path, saved_count, L"%ls\\%ls_%ls.mp4", category_dir, category, timestamp);
+    if (has_audio) {
+        double drift_gap = 0.0, audio_end, audio_start, lead, seek;
+        wchar_t seek_arg[64] = L"";
+        if (tails_known) {
+            tail_gap = (audio_tail_ms - video_tail_ms) / 1000.0;
+            if (running && timing->have_video && timing->have_audio)
+                drift_gap = (timing->video_drift_ms - timing->audio_drift_ms) / 1000.0;
+        }
+        audio_end = audio_seconds - (tail_gap + drift_gap) - skip;
+        audio_start = audio_end - video_seconds - config->av_sync_offset_ms / 1000.0;
+        if (audio_end <= 0.05 || audio_start >= audio_seconds - 0.05) {
+            wprintf(L"The audio buffer does not overlap this clip; saving video only.\n");
+            has_audio = 0;
+        } else {
+            lead = audio_start < 0.0 ? -audio_start : 0.0;
+            seek = audio_start > 0.0 ? audio_start : 0.0;
+            if (seek > 0.0) swprintf_s(seek_arg, ARRAY_COUNT(seek_arg), L"-ss %.3f ", seek);
+            swprintf_s(command, ARRAY_COUNT(command),
+                       L"\"%ls\" -hide_banner -loglevel warning -y "
+                       L"-i %ls %ls-i joined_audio.mka -map 0:v:0 -map 1:a:0 -c:v copy "
+                       L"-af \"adelay=%lldS:all=1,apad\" -c:a aac -b:a 192k "
+                       L"-t %.3f -movflags +faststart final.mp4",
+                       config->ffmpeg_path, video_file, seek_arg,
+                       (long long)(lead * 48000.0 + 0.5), video_seconds);
+            wprintf(L"Clip alignment: %.2f s of video; audio placed %+.0f ms from buffer tail (copy gap %+.0f ms, encoder drift %+.0f ms)%ls.\n",
+                    video_seconds, (tail_gap + drift_gap) * 1000.0, tail_gap * 1000.0,
+                    drift_gap * 1000.0, tails_known ? L"" : L", tails assumed equal");
+        }
+    }
+    if (!has_audio) {
+        swprintf_s(command, ARRAY_COUNT(command),
+                   L"\"%ls\" -hide_banner -loglevel warning -y "
+                   L"-i %ls -map 0:v:0 -an -c:v copy "
+                   L"-movflags +faststart final.mp4",
+                   config->ffmpeg_path, video_file);
+    }
+    wprintf(L"Writing the final MP4.\n");
+    if (!run_process_wait_logged(command, snapshot, work_timeout * 2, &exit_code, log_path) || exit_code != 0) {
+        wprintf(L"FFmpeg could not create the final MP4. Details: %ls\n", log_path);
+        wprintf(L"The failed snapshot was kept for troubleshooting: %ls\n", snapshot);
+        return 0;
+    }
+
+    swprintf_s(path, ARRAY_COUNT(path), L"%ls\\final.mp4", snapshot);
+    if (!MoveFileExW(path, saved_path, MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING)) {
+        print_last_error(L"Could not move the completed MP4 clip");
+        remove_snapshot(snapshot, video_wanted, audio_wanted);
+        return 0;
+    }
+
+    remove_snapshot(snapshot, video_wanted, audio_wanted);
+    wprintf(L"Saved clip: %ls\n", saved_path);
+    return 1;
+}
+
 static int save_clip(const AppConfig *config, Recorder *recorder, const wchar_t *category,
                      double target_end_ms, wchar_t *saved_path, size_t saved_count)
 {
@@ -1461,17 +1650,11 @@ static int save_clip(const AppConfig *config, Recorder *recorder, const wchar_t 
     TimingSnapshot timing;
     double skip_estimate = 0.0, need_seconds;
     double video_tail_ms = 0.0, audio_tail_ms = 0.0;
-    double joined_seconds = 0.0, video_seconds = 0.0, audio_seconds = 0.0;
-    double skip = 0.0, start_v, end_v, tail_gap = 0.0;
     wchar_t timestamp[128];
     wchar_t snapshot[PATH_CAP];
-    wchar_t path[PATH_CAP];
     wchar_t log_path[PATH_CAP];
     wchar_t category_dir[PATH_CAP];
-    wchar_t command[COMMAND_CAP];
-    const wchar_t *video_file = L"joined.mkv";
-    DWORD exit_code = 1;
-    int has_audio = 0, tails_known = 0;
+    int tails_known = 0;
 
     if (!video || !audio) {
         wprintf(L"Could not allocate memory for the clip segment list.\n");
@@ -1587,159 +1770,135 @@ static int save_clip(const AppConfig *config, Recorder *recorder, const wchar_t 
     }
     free(video);
     free(audio);
+    return assemble_clip(config, snapshot, video_wanted, audio_wanted,
+                         video_tail_ms, audio_tail_ms, tails_known, running, &timing,
+                         config->clip_seconds, target_end_ms, skip_estimate,
+                         category, timestamp, saved_path, saved_count);
+}
 
-    if (!write_concat(snapshot, L"concat.txt", "part", "mkv", video_wanted)) {
-        remove_snapshot(snapshot, video_wanted, audio_wanted);
-        return 0;
-    }
 
-    swprintf_s(command, ARRAY_COUNT(command),
-               L"\"%ls\" -hide_banner -loglevel warning -y -fflags +genpts "
-               L"-f concat -safe 0 -i concat.txt -map 0:v:0 -an "
-               L"-c:v copy -avoid_negative_ts make_zero joined.mkv", config->ffmpeg_path);
-    wprintf(L"Joining video buffer segments with FFmpeg.\n");
-    if (!run_process_wait_logged(command, snapshot, 60000, &exit_code, log_path) || exit_code != 0) {
-        wprintf(L"FFmpeg could not join the video buffer segments. Details: %ls\n", log_path);
-        wprintf(L"The failed snapshot was kept for troubleshooting: %ls\n", snapshot);
-        return 0;
-    }
-    swprintf_s(path, ARRAY_COUNT(path), L"%ls\\joined.mkv", snapshot);
-    if (!probe_duration(config, snapshot, path, &joined_seconds)) joined_seconds = 0.0;
+/* ---------- Long recording (e.g. for YouTube videos) ----------
 
-    if (audio_wanted > 0 && write_concat(snapshot, L"audio_concat.txt", "audio_part", "mka",
-                                         audio_wanted)) {
-        swprintf_s(command, ARRAY_COUNT(command),
-                   L"\"%ls\" -hide_banner -loglevel warning -y -fflags +genpts "
-                   L"-f concat -safe 0 -i audio_concat.txt -map 0:a:0 "
-                   L"-af \"asetpts=N/SR/TB\" -c:a pcm_s16le "
-                   L"joined_audio.mka", config->ffmpeg_path);
-        wprintf(L"Joining independent audio buffer segments with FFmpeg.\n");
-        swprintf_s(path, ARRAY_COUNT(path), L"%ls\\joined_audio.mka", snapshot);
-        if (run_process_wait_logged(command, snapshot, 60000, &exit_code, log_path) &&
-            exit_code == 0 && probe_duration(config, snapshot, path, &audio_seconds))
-            has_audio = 1;
-        else
-            wprintf(L"Independent audio assembly failed; saving this clip as video only. Details: %ls\n",
-                    log_path);
-    } else if (config->capture_game_audio || config->capture_microphone) {
-        wprintf(L"No independent audio segment was available; saving video only.\n");
-    }
+   Uses the recording that is already running, so it costs no extra FPS.
+   The rolling buffer only keeps a few minutes, so while a long recording is
+   active every finished buffer piece is copied into its own folder before
+   the buffer reuses it. Stopping copies the live pieces and joins
+   everything with the same code that saves normal clips. */
 
-    /* How much of the buffer tail lies after the requested clip end. */
-    if (target_end_ms > 0.0) {
-        if (video_tail_ms > 0.0)
-            skip = (video_tail_ms - target_end_ms) / 1000.0 -
-                   (timing.have_video ? timing.video_drift_ms / 1000.0 : 0.0);
-        else
-            skip = skip_estimate;
-        if (skip < 0.0) skip = 0.0;
-    }
+typedef struct {
+    int active;
+    double start_ms;
+    FILETIME start_time;
+    wchar_t folder[PATH_CAP];
+    wchar_t timestamp[128];
+    size_t video_parts;
+    size_t audio_parts;
+    FILETIME last_video;
+    FILETIME last_audio;
+    ULONGLONG last_collect;
+} LongRecording;
 
-    if (joined_seconds > 0.0) {
-        end_v = joined_seconds - skip;
-        if (end_v < 1.0) {
-            end_v = joined_seconds;
-            skip = 0.0;
+/* Copies buffer files of one kind that finished after the recording started
+   and haven't been collected yet. With include_live, the file still being
+   written is copied too and *tail_ms gets the time of that copy. */
+static void long_collect_kind(const AppConfig *config, LongRecording *lr, int video,
+                              int include_live, double *tail_ms)
+{
+    Segment *segments = (Segment *)calloc(MAX_SEGMENTS, sizeof(Segment));
+    size_t count;
+    FILETIME *last = video ? &lr->last_video : &lr->last_audio;
+    size_t *parts = video ? &lr->video_parts : &lr->audio_parts;
+    if (!segments) return;
+    count = list_segments_matching(config->buffer_dir, video ? L"segment_*.mkv" : L"audio_*.mka",
+                                   segments, MAX_SEGMENTS);
+    /* Sorted oldest → newest by current write time; the newest is live. */
+    for (size_t i = 0; i < count; i++) {
+        int live = i + 1 == count;
+        if (live && !include_live) break;
+        if (CompareFileTime(&segments[i].modified, &lr->start_time) <= 0) continue;
+        if (CompareFileTime(&segments[i].modified, last) <= 0) continue;
+        if (copy_part(segments[i].path, lr->folder, video ? L"part" : L"audio_part",
+                      video ? L"mkv" : L"mka", *parts)) {
+            (*parts)++;
+            *last = segments[i].modified;
+            if (live && tail_ms) *tail_ms = now_ms();
         }
-        start_v = end_v - config->clip_seconds;
-        if (start_v < 0.0) start_v = 0.0;
-        video_seconds = joined_seconds;
-        if (start_v > 0.05 || skip > 0.05) {
-            swprintf_s(command, ARRAY_COUNT(command),
-                       L"\"%ls\" -hide_banner -loglevel warning -y "
-                       L"-ss %.3f -t %.3f -i joined.mkv -map 0:v:0 -c:v copy "
-                       L"-avoid_negative_ts make_zero trimmed.mkv",
-                       config->ffmpeg_path, start_v, end_v - start_v);
-            swprintf_s(path, ARRAY_COUNT(path), L"%ls\\trimmed.mkv", snapshot);
-            if (run_process_wait_logged(command, snapshot, 60000, &exit_code, log_path) &&
-                exit_code == 0 && probe_duration(config, snapshot, path, &video_seconds)) {
-                video_file = L"trimmed.mkv";
-                /* A stream-copy cut can start at the next keyframe instead of
-                   the previous one; if the clip came out short, cut again
-                   from one GOP earlier. The end point is unaffected. */
-                if (video_seconds < config->clip_seconds - 0.25 && start_v > 0.0) {
-                    double retry_seconds = 0.0;
-                    start_v -= KEYFRAME_MARGIN_SECONDS;
-                    if (start_v < 0.0) start_v = 0.0;
-                    swprintf_s(command, ARRAY_COUNT(command),
-                               L"\"%ls\" -hide_banner -loglevel warning -y "
-                               L"-ss %.3f -t %.3f -i joined.mkv -map 0:v:0 -c:v copy "
-                               L"-avoid_negative_ts make_zero trimmed.mkv",
-                               config->ffmpeg_path, start_v, end_v - start_v);
-                    if (run_process_wait_logged(command, snapshot, 60000, &exit_code, log_path) &&
-                        exit_code == 0 && probe_duration(config, snapshot, path, &retry_seconds))
-                        video_seconds = retry_seconds;
-                    else {
-                        video_file = L"joined.mkv";
-                        video_seconds = joined_seconds;
-                        skip = 0.0;
-                    }
-                }
-            } else {
-                wprintf(L"Could not trim the clip precisely; keeping the full snapshot.\n");
-                video_seconds = joined_seconds;
-                skip = 0.0;
-            }
-        }
+    }
+    free(segments);
+}
+
+static void long_record_start(const AppConfig *config, const Recorder *recorder, LongRecording *lr)
+{
+    if (lr->active) return;
+    if (!recorder->running) {
+        wprintf(L"LONG|unavailable\n");
+        wprintf(L"Long recording starts once ClipShot is recording Fortnite.\n");
+        return;
+    }
+    ZeroMemory(lr, sizeof(*lr));
+    make_timestamp(lr->timestamp, ARRAY_COUNT(lr->timestamp));
+    swprintf_s(lr->folder, ARRAY_COUNT(lr->folder), L"%ls\\long_%ls", config->work_dir, lr->timestamp);
+    ensure_directory(lr->folder);
+    GetSystemTimeAsFileTime(&lr->start_time);
+    lr->start_ms = now_ms();
+    lr->last_collect = GetTickCount64();
+    lr->active = 1;
+    wprintf(L"LONG|started\n");
+    wprintf(L"Long recording started. Press %ls again to stop and save it.\n", config->long_hotkey);
+}
+
+static void long_record_poll(const AppConfig *config, LongRecording *lr)
+{
+    if (!lr->active || GetTickCount64() - lr->last_collect < LONG_COLLECT_MS) return;
+    lr->last_collect = GetTickCount64();
+    long_collect_kind(config, lr, 1, 0, NULL);
+    if (config->capture_game_audio || config->capture_microphone)
+        long_collect_kind(config, lr, 0, 0, NULL);
+}
+
+static void long_record_stop(const AppConfig *config, Recorder *recorder, LongRecording *lr)
+{
+    int running = recorder->running;
+    double video_tail = 0.0, audio_tail = 0.0, end_ms;
+    TimingSnapshot timing;
+    wchar_t saved[PATH_CAP];
+    int has_audio_source = config->capture_game_audio || config->capture_microphone;
+
+    if (!lr->active) return;
+    lr->active = 0;
+    wprintf(L"Saving long recording…\n");
+    timing_snapshot(recorder, &timing);
+    /* Finished pieces first, then both live pieces back to back so their
+       ends describe nearly the same moment (as for normal clips). */
+    long_collect_kind(config, lr, 1, 0, NULL);
+    if (has_audio_source) long_collect_kind(config, lr, 0, 0, NULL);
+    if (running) {
+        if (has_audio_source) long_collect_kind(config, lr, 0, 1, &audio_tail);
+        long_collect_kind(config, lr, 1, 1, &video_tail);
     } else {
-        wprintf(L"Could not measure the joined video; saving it without audio alignment.\n");
-        has_audio = 0;
+        /* Fortnite closed: recording already stopped, every piece is finished. */
+        if (has_audio_source) long_collect_kind(config, lr, 0, 1, NULL);
+        long_collect_kind(config, lr, 1, 1, NULL);
+        video_tail = audio_tail = g_capture_stopped_ms;
     }
+    end_ms = running ? (video_tail > 0.0 ? video_tail : now_ms()) : g_capture_stopped_ms;
 
-    swprintf_s(saved_path, saved_count, L"%ls\\%ls_%ls.mp4", category_dir, category, timestamp);
-    if (has_audio) {
-        double drift_gap = 0.0, audio_end, audio_start, lead, seek;
-        wchar_t seek_arg[64] = L"";
-        if (tails_known) {
-            tail_gap = (audio_tail_ms - video_tail_ms) / 1000.0;
-            if (running && timing.have_video && timing.have_audio)
-                drift_gap = (timing.video_drift_ms - timing.audio_drift_ms) / 1000.0;
-        }
-        audio_end = audio_seconds - (tail_gap + drift_gap) - skip;
-        audio_start = audio_end - video_seconds - config->av_sync_offset_ms / 1000.0;
-        if (audio_end <= 0.05 || audio_start >= audio_seconds - 0.05) {
-            wprintf(L"The audio buffer does not overlap this clip; saving video only.\n");
-            has_audio = 0;
-        } else {
-            lead = audio_start < 0.0 ? -audio_start : 0.0;
-            seek = audio_start > 0.0 ? audio_start : 0.0;
-            if (seek > 0.0) swprintf_s(seek_arg, ARRAY_COUNT(seek_arg), L"-ss %.3f ", seek);
-            swprintf_s(command, ARRAY_COUNT(command),
-                       L"\"%ls\" -hide_banner -loglevel warning -y "
-                       L"-i %ls %ls-i joined_audio.mka -map 0:v:0 -map 1:a:0 -c:v copy "
-                       L"-af \"adelay=%lldS:all=1,apad\" -c:a aac -b:a 192k "
-                       L"-t %.3f -movflags +faststart final.mp4",
-                       config->ffmpeg_path, video_file, seek_arg,
-                       (long long)(lead * 48000.0 + 0.5), video_seconds);
-            wprintf(L"Clip alignment: %.2f s of video; audio placed %+.0f ms from buffer tail (copy gap %+.0f ms, encoder drift %+.0f ms)%ls.\n",
-                    video_seconds, (tail_gap + drift_gap) * 1000.0, tail_gap * 1000.0,
-                    drift_gap * 1000.0, tails_known ? L"" : L", tails assumed equal");
-        }
+    if (lr->video_parts == 0) {
+        wprintf(L"LONG|stopped|\n");
+        wprintf(L"The long recording was too short to save.\n");
+        remove_snapshot(lr->folder, 0, lr->audio_parts);
+        return;
     }
-    if (!has_audio) {
-        swprintf_s(command, ARRAY_COUNT(command),
-                   L"\"%ls\" -hide_banner -loglevel warning -y "
-                   L"-i %ls -map 0:v:0 -an -c:v copy "
-                   L"-movflags +faststart final.mp4",
-                   config->ffmpeg_path, video_file);
+    if (assemble_clip(config, lr->folder, lr->video_parts, lr->audio_parts,
+                      video_tail, audio_tail, video_tail > 0.0 && audio_tail > 0.0,
+                      running, &timing, (end_ms - lr->start_ms) / 1000.0, 0.0, 0.0,
+                      L"Recordings", lr->timestamp, saved, ARRAY_COUNT(saved))) {
+        wprintf(L"LONG|stopped|%ls\n", saved);
+        wprintf(L"Saved recording: %ls\n", saved);
+    } else {
+        wprintf(L"LONG|stopped|\n");
+        wprintf(L"The long recording couldn't be saved. Its pieces were kept in %ls\n", lr->folder);
     }
-    wprintf(L"Writing the final MP4.\n");
-    if (!run_process_wait_logged(command, snapshot, 120000, &exit_code, log_path) || exit_code != 0) {
-        wprintf(L"FFmpeg could not create the final MP4. Details: %ls\n", log_path);
-        wprintf(L"The failed snapshot was kept for troubleshooting: %ls\n", snapshot);
-        return 0;
-    }
-
-    swprintf_s(path, ARRAY_COUNT(path), L"%ls\\final.mp4", snapshot);
-    if (!MoveFileExW(path, saved_path, MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING)) {
-        print_last_error(L"Could not move the completed MP4 clip");
-        remove_snapshot(snapshot, video_wanted, audio_wanted);
-        return 0;
-    }
-
-    remove_snapshot(snapshot, video_wanted, audio_wanted);
-    wprintf(L"Saved clip: %ls\n", saved_path);
-    return 1;
 }
 
 static int find_newest_replay(wchar_t *out, size_t out_count)
@@ -2070,6 +2229,11 @@ int wmain(void)
     wchar_t pending_replay[PATH_CAP] = L"";
     HANDLE save_event;
     HANDLE stop_event;
+    HANDLE long_event;
+    LongRecording long_recording;
+    int long_hotkey_registered;
+    UINT long_hotkey_modifiers;
+    UINT long_hotkey_virtual_key;
     HANDLE engine_mutex;
     int save_hotkey_registered;
     UINT save_hotkey_modifiers;
@@ -2098,12 +2262,15 @@ int wmain(void)
     ensure_directory(config.work_dir);
     replay_watch_initialize(&watch, process_is_running(FORTNITE_PROCESS));
 
+    ZeroMemory(&long_recording, sizeof(long_recording));
     save_event = CreateEventW(NULL, FALSE, FALSE, SAVE_EVENT_NAME);
     stop_event = CreateEventW(NULL, FALSE, FALSE, STOP_EVENT_NAME);
-    if (!save_event || !stop_event) {
+    long_event = CreateEventW(NULL, FALSE, FALSE, LONG_EVENT_NAME);
+    if (!save_event || !stop_event || !long_event) {
         print_last_error(L"Could not create GUI control events");
         if (save_event) CloseHandle(save_event);
         if (stop_event) CloseHandle(stop_event);
+        if (long_event) CloseHandle(long_event);
         CloseHandle(engine_mutex);
         return 1;
     }
@@ -2120,6 +2287,17 @@ int wmain(void)
         wprintf(L"Warning: %ls could not be registered; GUI controls remain available.\n",
                 config.manual_hotkey);
 
+    if (!parse_hotkey(config.long_hotkey, &long_hotkey_modifiers, &long_hotkey_virtual_key)) {
+        wcscpy_s(config.long_hotkey, ARRAY_COUNT(config.long_hotkey), L"F9");
+        long_hotkey_modifiers = MOD_NOREPEAT;
+        long_hotkey_virtual_key = VK_F9;
+    }
+    long_hotkey_registered = RegisterHotKey(NULL, HOTKEY_LONG,
+                                            long_hotkey_modifiers, long_hotkey_virtual_key);
+    if (!long_hotkey_registered)
+        wprintf(L"Warning: %ls could not be set up for long recording. Another app may be using it; the Dashboard button still works.\n",
+                config.long_hotkey);
+
     wprintf(L"Decrypt's ClipShot engine\n");
     wprintf(L"%ls saves a manual clip.\n", config.manual_hotkey);
     wprintf(L"Buffer directory: %ls\n", config.buffer_dir);
@@ -2134,6 +2312,9 @@ int wmain(void)
             if (message.message == WM_HOTKEY && message.wParam == HOTKEY_SAVE) {
                 wchar_t saved[PATH_CAP];
                 save_clip(&config, &recorder, L"Manual", 0.0, saved, ARRAY_COUNT(saved));
+            } else if (message.message == WM_HOTKEY && message.wParam == HOTKEY_LONG) {
+                if (long_recording.active) long_record_stop(&config, &recorder, &long_recording);
+                else long_record_start(&config, &recorder, &long_recording);
             }
         }
 
@@ -2141,8 +2322,13 @@ int wmain(void)
             wchar_t saved[PATH_CAP];
             save_clip(&config, &recorder, L"Manual", 0.0, saved, ARRAY_COUNT(saved));
         }
+        if (WaitForSingleObject(long_event, 0) == WAIT_OBJECT_0) {
+            if (long_recording.active) long_record_stop(&config, &recorder, &long_recording);
+            else long_record_start(&config, &recorder, &long_recording);
+        }
         if (WaitForSingleObject(stop_event, 0) == WAIT_OBJECT_0)
             InterlockedExchange(&g_quit, 1);
+        long_record_poll(&config, &long_recording);
 
         if (now - last_process_check >= 1000) {
             recorder_poll_audio(&recorder, &config);
@@ -2153,7 +2339,11 @@ int wmain(void)
                 if (config.start_only_with_fortnite) recorder_start(&recorder, &config);
             } else if (!fortnite && fortnite_previous) {
                 wprintf(L"Fortnite closed.\n");
-                if (config.start_only_with_fortnite) recorder_stop(&recorder);
+                if (config.start_only_with_fortnite) {
+                    recorder_stop(&recorder);
+                    /* Finish a long recording with everything recorded so far. */
+                    long_record_stop(&config, &recorder, &long_recording);
+                }
             }
             fortnite_previous = fortnite;
             last_process_check = now;
@@ -2198,7 +2388,10 @@ int wmain(void)
     }
 
     recorder_stop(&recorder);
+    long_record_stop(&config, &recorder, &long_recording);
     if (save_hotkey_registered) UnregisterHotKey(NULL, HOTKEY_SAVE);
+    if (long_hotkey_registered) UnregisterHotKey(NULL, HOTKEY_LONG);
+    CloseHandle(long_event);
     CloseHandle(save_event);
     CloseHandle(stop_event);
     CloseHandle(engine_mutex);

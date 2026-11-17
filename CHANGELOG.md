@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.4
+
+- **Long recording** for YouTube videos and full sessions. Press **F9** (or click **Start long recording** on the Dashboard) to start, and press it again to stop and save. Recordings show up in My Clips under **Recordings**. Change the key in Settings. If Fortnite closes, the recording is saved automatically.
+- Simpler wording throughout the app. The Activity panel now only shows things that matter to you (clip saved, trickshot found, problems and what to do), and technical details go to a log file instead.
+
 ## 1.0.3
 
 - Meter Checker shows how each sniper kill was hit: **Scoped**, **No-scope**, or **Aimed (iron sights)** for scopeless snipers like the Hunting Rifle.
