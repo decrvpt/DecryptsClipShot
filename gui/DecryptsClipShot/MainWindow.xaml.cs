@@ -654,7 +654,7 @@ public partial class MainWindow : Window
         if (Starts(line, "Saved screenshot:"))
             return line.EndsWith("_damage.png", StringComparison.OrdinalIgnoreCase)
                 ? "Trickshot screenshot saved (damage number)"
-                : "Trickshot screenshot saved (kill streaks)";
+                : "Trickshot screenshot saved (swag lines)";
         if (Has(line, "final kill happened before this clip starts") || Has(line, "Couldn't find the kill in this clip"))
             return "Couldn't find the kill for a screenshot. Open the clip in My Clips and click Screenshot to pick it yourself.";
         if (Starts(line, "Saved recording:") || Starts(line, "Long recording started")) return null; // shown by the LONG| lines

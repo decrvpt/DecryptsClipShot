@@ -119,9 +119,9 @@ public partial class ScreenshotWindow : Window
     }
 
     private void FindKill_Click(object sender, RoutedEventArgs e) =>
-        _ = FindMomentAsync("--find-kill", "Looking for the kill streaks…",
-            "Jumped to where the streaks are most visible. Use the frame buttons to fine-tune, then Save screenshot.",
-            "Couldn't find kill streaks here (kills on bots don't have them). Pick the moment yourself.");
+        _ = FindMomentAsync("--find-kill", "Looking for the swag lines…",
+            "Jumped to where the swag lines are most visible. Use the frame buttons to fine-tune, then Save screenshot.",
+            "Couldn't find swag lines here (kills on bots don't have them). Pick the moment yourself.");
 
     private void FindDamage_Click(object sender, RoutedEventArgs e) =>
         _ = FindMomentAsync("--find-damage", "Looking for the damage number…",

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.10
+
+- Kill streaks are now called **swag lines**, like trickshotters call them (in the app, and in screenshot names: "…_swag-lines.png").
+- The log now records, once a minute, how much CPU and memory each part of the recorder uses, to spot slowdowns in long sessions.
+- The rolling buffer (the last few minutes ClipShot keeps ready to save) is now deleted when you stop ClipShot, freeing several hundred MB, and cleared when recording starts, so footage from an earlier session can never end up in a new clip.
+
 ## 1.0.9
 
 - **Trickshot screenshots work in snowy areas.** Edges of snow against dark ground looked like kill streaks, so ClipShot sometimes saved a frame from before the kill. Kill streaks are now recognized as long, thin lines that point outward from the middle of the screen with darker scenery on both sides; snow edges only have one dark side. In testing, snow scores about 20 and real streaks over 400.

@@ -6,7 +6,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 add_executable(TrickClip src/trickclip.c)
 target_compile_definitions(TrickClip PRIVATE UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS)
-target_link_libraries(TrickClip PRIVATE user32 shell32 ole32 uuid)
+target_link_libraries(TrickClip PRIVATE user32 shell32 ole32 uuid psapi)
 
 if(MSVC)
     target_compile_options(TrickClip PRIVATE /W4)

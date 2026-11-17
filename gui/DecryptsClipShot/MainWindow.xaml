@@ -545,7 +545,7 @@
                                     <TextBlock Text="Screenshot shortcut" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/>
                                     <Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="ShotHotkeyBox" Style="{StaticResource InputStyle}" IsReadOnly="True"/><Button x:Name="ShotHotkeyCaptureButton" Grid.Column="1" Content="Set shortcut" Style="{StaticResource SecondaryButton}" Click="CaptureShotHotkey_Click" Margin="10,0,0,0"/></Grid>
                                     <CheckBox x:Name="TrickshotScreenshotCheck" Content="Save a screenshot of every trickshot automatically" Foreground="White" Margin="0,0,0,4"/>
-                                    <TextBlock Text="Picks the moment the kill streaks are most visible." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="22,0,0,12" TextWrapping="Wrap"/>
+                                    <TextBlock Text="Saves one picture with the swag lines and one with the damage number." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="22,0,0,12" TextWrapping="Wrap"/>
                                     <CheckBox x:Name="FortniteOnlyCheck" Content="Start recording only when Fortnite is running" Foreground="White" Margin="0,4"/>
                                     <CheckBox x:Name="LocalReplayCheck" Content="Check each match for trickshots automatically" Foreground="White" Margin="0,8,0,4"/>
                                     <TextBlock Text="After a win, ClipShot checks the final kill and keeps the clip if it was a trickshot." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="22,0,0,5" TextWrapping="Wrap"/>

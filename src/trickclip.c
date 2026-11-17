@@ -12,6 +12,7 @@
 #include <shlobj.h>
 #include <knownfolders.h>
 #include <tlhelp32.h>
+#include <psapi.h>
 #include <direct.h>
 #include <stdio.h>
 #include <math.h>
@@ -118,6 +119,10 @@ typedef struct {
     ProgressClock video_clock;
     ProgressClock audio_clock;
     double last_timing_report_ms;
+    /* CPU time used so far by the screen recorder, sound recorder and sound
+       helpers, at the last report (for the per-minute resource line). */
+    ULONGLONG last_cpu[3];
+    double last_cpu_sample_ms;
 } Recorder;
 
 typedef struct {
@@ -1176,9 +1181,35 @@ static int recorder_start_backend(Recorder *recorder, const AppConfig *config, i
     return 1;
 }
 
+/* Deletes the rolling buffer's pieces and piece lists. Done when recording
+   starts (so footage from an earlier session can never end up in a clip,
+   and pieces left over from a bigger buffer setting don't linger) and when
+   ClipShot stops (so the buffer doesn't keep using disk space). */
+static void clear_buffer(const AppConfig *config)
+{
+    static const wchar_t *const patterns[] = {
+        L"segment_*.mkv", L"audio_*.mka", L"video_list.csv", L"audio_list.csv"
+    };
+    for (size_t p = 0; p < ARRAY_COUNT(patterns); p++) {
+        WIN32_FIND_DATAW data;
+        wchar_t search[PATH_CAP], path[PATH_CAP];
+        HANDLE find;
+        swprintf_s(search, ARRAY_COUNT(search), L"%ls\\%ls", config->buffer_dir, patterns[p]);
+        find = FindFirstFileW(search, &data);
+        if (find == INVALID_HANDLE_VALUE) continue;
+        do {
+            if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+            swprintf_s(path, ARRAY_COUNT(path), L"%ls\\%ls", config->buffer_dir, data.cFileName);
+            DeleteFileW(path);
+        } while (FindNextFileW(find, &data));
+        FindClose(find);
+    }
+}
+
 static int recorder_start(Recorder *recorder, const AppConfig *config)
 {
     int try_dxgi = _wcsicmp(config->capture_backend, L"gdi") != 0;
+    clear_buffer(config);
     if (try_dxgi && recorder_start_backend(recorder, config, 1)) return 1;
     if (try_dxgi)
         wprintf(L"DXGI Desktop Duplication was unavailable; trying the GDI compatibility fallback.\n");
@@ -1209,6 +1240,62 @@ static void recorder_stop(Recorder *recorder)
 /* Periodic proof that recording keeps real time. "drift" is how much further
    behind real time each recorder is now than at its best point this session;
    with the timestamp fixes it should stay near zero for the whole session. */
+/* Total CPU time (100 ns units) a process has used, and its memory. */
+static int process_usage(HANDLE process, ULONGLONG *cpu, SIZE_T *memory)
+{
+    FILETIME created, exited, kernel, user;
+    PROCESS_MEMORY_COUNTERS counters;
+    if (!process || !GetProcessTimes(process, &created, &exited, &kernel, &user)) return 0;
+    *cpu = (((ULONGLONG)kernel.dwHighDateTime << 32) | kernel.dwLowDateTime) +
+           (((ULONGLONG)user.dwHighDateTime << 32) | user.dwLowDateTime);
+    ZeroMemory(&counters, sizeof(counters));
+    counters.cb = sizeof(counters);
+    *memory = GetProcessMemoryInfo(process, &counters, sizeof(counters)) ? counters.WorkingSetSize : 0;
+    return 1;
+}
+
+/* Once a minute, how much CPU (share of the whole processor) and memory each
+   part of the recorder used, so a slowdown over a long session can be traced
+   to ClipShot or ruled out. */
+static void recorder_report_resources(Recorder *recorder, double now)
+{
+    static const wchar_t *const names[3] = { L"screen recorder", L"sound recorder", L"sound helper" };
+    SYSTEM_INFO system;
+    ULONGLONG cpu[3] = {0, 0, 0};
+    SIZE_T memory[3] = {0, 0, 0};
+    int have[3] = {0, 0, 0};
+    double elapsed = now - recorder->last_cpu_sample_ms;
+    wchar_t line[512] = L"Resources:";
+
+    GetSystemInfo(&system);
+    have[0] = process_usage(recorder->process.hProcess, &cpu[0], &memory[0]);
+    have[1] = process_usage(recorder->audio_process.hProcess, &cpu[1], &memory[1]);
+    for (int i = 0; i < recorder->audio_helper_count; i++) {
+        ULONGLONG c = 0;
+        SIZE_T m = 0;
+        if (process_usage(recorder->audio_helpers[i].hProcess, &c, &m)) {
+            cpu[2] += c;
+            memory[2] += m;
+            have[2] = 1;
+        }
+    }
+    if (recorder->last_cpu_sample_ms > 0.0 && elapsed > 1000.0) {
+        for (int i = 0; i < 3; i++) {
+            double percent;
+            wchar_t part[128];
+            if (!have[i] || cpu[i] < recorder->last_cpu[i]) continue;
+            percent = (double)(cpu[i] - recorder->last_cpu[i]) / (elapsed * 10000.0) /
+                      (system.dwNumberOfProcessors ? system.dwNumberOfProcessors : 1) * 100.0;
+            swprintf_s(part, ARRAY_COUNT(part), L"%ls %ls %.1f%% CPU, %zu MB",
+                       line[10] ? L";" : L"", names[i], percent, (size_t)(memory[i] / (1024 * 1024)));
+            wcscat_s(line, ARRAY_COUNT(line), part);
+        }
+        if (line[10]) wprintf(L"%ls.\n", line);
+    }
+    for (int i = 0; i < 3; i++) recorder->last_cpu[i] = cpu[i];
+    recorder->last_cpu_sample_ms = now;
+}
+
 static void recorder_report_timing(Recorder *recorder)
 {
     TimingSnapshot timing;
@@ -1216,6 +1303,7 @@ static void recorder_report_timing(Recorder *recorder)
     if (!recorder->running || now - recorder->last_timing_report_ms < TIMING_REPORT_MS)
         return;
     recorder->last_timing_report_ms = now;
+    recorder_report_resources(recorder, now);
     timing_snapshot(recorder, &timing);
     if (!timing.have_video) return;
     if (timing.have_audio)
@@ -3038,7 +3126,7 @@ static void save_trickshot_screenshot(const AppConfig *config, const wchar_t *cl
     wchar_t *dot;
     int saved = 0;
     /* Same name as the clip plus what the picture shows, e.g.
-       184m_no-scope_2026-09-01_19-47-36_streaks.png, in the screenshots
+       184m_no-scope_2026-09-01_19-47-36_swag-lines.png, in the screenshots
        folder so clips and pictures stay separate. */
     slash = wcsrchr(clip, L'\\');
     wcscpy_s(name, ARRAY_COUNT(name), slash ? slash + 1 : clip);
@@ -3046,7 +3134,7 @@ static void save_trickshot_screenshot(const AppConfig *config, const wchar_t *cl
     if (dot) *dot = L'\0';
     ensure_directory(config->screenshots_dir);
     if (frame->streaks_found) {
-        swprintf_s(png, ARRAY_COUNT(png), L"%ls\\%ls_streaks.png", config->screenshots_dir, name);
+        swprintf_s(png, ARRAY_COUNT(png), L"%ls\\%ls_swag-lines.png", config->screenshots_dir, name);
         if (export_frame(config, clip, config->work_dir, frame->streak_moment, png)) {
             wprintf(L"Saved screenshot: %ls\n", png);
             saved++;
@@ -3446,6 +3534,8 @@ int wmain(int argc, wchar_t **argv)
 
     recorder_stop(&recorder);
     long_record_stop(&config, &recorder, &long_recording);
+    /* Everything worth keeping has been saved by now. */
+    clear_buffer(&config);
     if (save_hotkey_registered) UnregisterHotKey(NULL, HOTKEY_SAVE);
     if (long_hotkey_registered) UnregisterHotKey(NULL, HOTKEY_LONG);
     if (shot_hotkey_registered) UnregisterHotKey(NULL, HOTKEY_SHOT);
