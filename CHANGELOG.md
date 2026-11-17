@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.5
+
+- **Trickshot screenshots.** When a trickshot is saved, ClipShot also saves a picture of the final kill at the moment the kill streaks are most visible (weak or strong streaks, it picks that clip's best frame). Turn it off in Settings.
+- **Screenshot key (F10).** Press it in game to save a picture of that moment. If you press it just after a kill, ClipShot picks the frame where the kill streaks were most visible.
+- **Screenshot from any clip.** In My Clips, select a clip and click **Screenshot**. Scrub or step frame by frame (arrow keys), or click **Find kill moment**, then **Save screenshot**.
+- Screenshots are kept separate from clips: they're saved in **Pictures\Decrypt's ClipShot** and have their own **Screenshots** page in the app.
+
 ## 1.0.4
 
 - **Long recording** for YouTube videos and full sessions. Press **F9** (or click **Start long recording** on the Dashboard) to start, and press it again to stop and save. Recordings show up in My Clips under **Recordings**. Change the key in Settings. If Fortnite closes, the recording is saved automatically.

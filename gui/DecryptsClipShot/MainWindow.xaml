@@ -27,6 +27,18 @@
                 </StackPanel>
             </Border>
         </DataTemplate>
+        <DataTemplate x:Key="ScreenshotCardTemplate">
+            <Border Width="252" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Margin="0,0,16,16" Padding="10" Cursor="Hand"
+                    ToolTip="Double-click to open">
+                <StackPanel>
+                    <Border Height="132" Background="#281818" CornerRadius="8" ClipToBounds="True">
+                        <Image Source="{Binding ThumbnailPath}" Stretch="UniformToFill"/>
+                    </Border>
+                    <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold" Margin="4,10,4,0" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding Details}" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="4,4,4,3"/>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
     </Window.Resources>
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0"
@@ -82,6 +94,9 @@
                             </Button>
                             <Button x:Name="ClipsNav" Style="{StaticResource NavButton}" Click="ClipsNav_Click">
                                 <StackPanel Orientation="Horizontal"><TextBlock Text="▶" Width="28" FontSize="13"/><TextBlock Text="My Clips"/></StackPanel>
+                            </Button>
+                            <Button x:Name="ScreenshotsNav" Style="{StaticResource NavButton}" Click="ScreenshotsNav_Click">
+                                <StackPanel Orientation="Horizontal"><TextBlock Text="▣" Width="28" FontSize="15"/><TextBlock Text="Screenshots"/></StackPanel>
                             </Button>
                             <Button x:Name="ReplayAnalyzerNav" Style="{StaticResource NavButton}" Click="ReplayAnalyzerNav_Click">
                                 <StackPanel Orientation="Horizontal"><TextBlock Text="◎" Width="28" FontSize="16"/><TextBlock Text="Meter Checker"/></StackPanel>
@@ -237,7 +252,7 @@
                         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                         <Grid>
                             <StackPanel><TextBlock Text="My Clips" FontSize="28" FontWeight="Bold"/><TextBlock Text="Double-click a clip to watch it. Clips are saved in your Videos folder." Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"/></StackPanel>
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top"><Button Content="Rename" Style="{StaticResource SecondaryButton}" Click="RenameClip_Click" Margin="0,0,10,0" ToolTip="Select a clip first, then click Rename"/><Button Content="Refresh" Style="{StaticResource SecondaryButton}" Click="RefreshClips_Click" Margin="0,0,10,0"/><Button Content="Open folder" Style="{StaticResource PrimaryButton}" Click="OpenClipsFolder_Click"/></StackPanel>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top"><Button Content="Screenshot" Style="{StaticResource SecondaryButton}" Click="ClipScreenshot_Click" Margin="0,0,10,0" ToolTip="Select a clip first, then pick the exact moment to save as a picture"/><Button Content="Rename" Style="{StaticResource SecondaryButton}" Click="RenameClip_Click" Margin="0,0,10,0" ToolTip="Select a clip first, then click Rename"/><Button Content="Refresh" Style="{StaticResource SecondaryButton}" Click="RefreshClips_Click" Margin="0,0,10,0"/><Button Content="Open folder" Style="{StaticResource PrimaryButton}" Click="OpenClipsFolder_Click"/></StackPanel>
                         </Grid>
                         <ScrollViewer Grid.Row="1" Margin="0,22,0,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                             <StackPanel>
@@ -276,6 +291,23 @@
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+
+                    <Grid x:Name="ScreenshotsPanel" Visibility="Collapsed">
+                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                        <Grid>
+                            <StackPanel><TextBlock Text="Screenshots" FontSize="28" FontWeight="Bold"/><TextBlock x:Name="ScreenshotsSubtitle" Text="Saved in your Pictures folder, separate from your clips. Double-click one to open it." Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" TextWrapping="Wrap"/></StackPanel>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top"><Button Content="Refresh" Style="{StaticResource SecondaryButton}" Click="RefreshScreenshots_Click" Margin="0,0,10,0"/><Button Content="Open folder" Style="{StaticResource PrimaryButton}" Click="OpenScreenshotsFolder_Click"/></StackPanel>
+                        </Grid>
+                        <ScrollViewer Grid.Row="1" Margin="0,22,0,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel>
+                                <ListBox x:Name="ScreenshotsList" Background="Transparent" BorderThickness="0" MouseDoubleClick="ScreenshotsList_MouseDoubleClick" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled" ItemTemplate="{StaticResource ScreenshotCardTemplate}">
+                                    <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ListBox.ItemsPanel>
+                                </ListBox>
+                                <TextBlock x:Name="ScreenshotsEmptyText" Foreground="{StaticResource MutedBrush}" FontSize="12.5" Margin="0,4,0,18" TextWrapping="Wrap"
+                                           Text="No screenshots yet. Trickshots get one automatically, press F10 in game, or open a clip in My Clips and click Screenshot."/>
                             </StackPanel>
                         </ScrollViewer>
                     </Grid>
@@ -510,6 +542,10 @@
                                     <Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="HotkeyBox" Style="{StaticResource InputStyle}" IsReadOnly="True"/><Button x:Name="HotkeyCaptureButton" Grid.Column="1" Content="Set shortcut" Style="{StaticResource SecondaryButton}" Click="CaptureHotkey_Click" Margin="10,0,0,0"/></Grid>
                                     <TextBlock Text="Long recording shortcut (press once to start, again to stop)" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/>
                                     <Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="LongHotkeyBox" Style="{StaticResource InputStyle}" IsReadOnly="True"/><Button x:Name="LongHotkeyCaptureButton" Grid.Column="1" Content="Set shortcut" Style="{StaticResource SecondaryButton}" Click="CaptureLongHotkey_Click" Margin="10,0,0,0"/></Grid>
+                                    <TextBlock Text="Screenshot shortcut" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/>
+                                    <Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="ShotHotkeyBox" Style="{StaticResource InputStyle}" IsReadOnly="True"/><Button x:Name="ShotHotkeyCaptureButton" Grid.Column="1" Content="Set shortcut" Style="{StaticResource SecondaryButton}" Click="CaptureShotHotkey_Click" Margin="10,0,0,0"/></Grid>
+                                    <CheckBox x:Name="TrickshotScreenshotCheck" Content="Save a screenshot of every trickshot automatically" Foreground="White" Margin="0,0,0,4"/>
+                                    <TextBlock Text="Picks the moment the kill streaks are most visible." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="22,0,0,12" TextWrapping="Wrap"/>
                                     <CheckBox x:Name="FortniteOnlyCheck" Content="Start recording only when Fortnite is running" Foreground="White" Margin="0,4"/>
                                     <CheckBox x:Name="LocalReplayCheck" Content="Check each match for trickshots automatically" Foreground="White" Margin="0,8,0,4"/>
                                     <TextBlock Text="After a win, ClipShot checks the final kill and keeps the clip if it was a trickshot." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="22,0,0,5" TextWrapping="Wrap"/>

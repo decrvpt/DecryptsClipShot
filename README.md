@@ -2,7 +2,7 @@
 
 A Windows clipping app made for Fortnite. ClipShot keeps the last few minutes of your game ready to save. Press **F8** after a great moment, and when you win with a sniper or heavy-ammo shot, the trickshot is clipped automatically and titled with its distance.
 
-Need a full session for YouTube? Press **F9** to start a long recording and **F9** again to save it.
+Need a full session for YouTube? Press **F9** to start a long recording and **F9** again to save it. Press **F10** for a screenshot, and every trickshot gets a screenshot of the kill automatically.
 
 No OBS, no accounts, no subscriptions.
 
@@ -24,6 +24,7 @@ No OBS, no accounts, no subscriptions.
 3. **Click Start ClipShot** on the Dashboard, then launch Fortnite. Recording starts by itself when the game opens.
 4. **Press F8** after a great moment to save the last 90 seconds.
 5. **Press F9** to start a long recording (for YouTube videos or full sessions). Press **F9** again to stop and save it. You can also use the **Start long recording** button on the Dashboard.
+6. **Press F10** to save a screenshot of the moment.
 
 Fortnite in **Borderless Windowed** mode works best.
 
@@ -35,6 +36,14 @@ Clips are saved in your **Videos** folder, under **Decrypt's ClipShot**. In the 
 - **All clips**: everything you saved with F8, long recordings (marked **Recordings**), and automatic clips that didn't qualify as trickshots.
 
 Double-click a clip to watch it. Select one and click **Rename** to rename it. You can choose another folder in **Settings → Storage**.
+
+## Screenshots
+
+Screenshots are saved in your **Pictures** folder, under **Decrypt's ClipShot**, separate from your clips. The **Screenshots** page in the app shows them.
+
+- **Trickshots** get a screenshot automatically, taken at the moment the final kill's streaks are most visible.
+- **In game**, press **F10** to save the moment. If you press it right after a kill, ClipShot picks the frame where the kill streaks were most visible.
+- **From a clip**: in My Clips, select a clip and click **Screenshot**. Move to the moment you want (the arrow keys step one frame), or click **Find kill moment**, then **Save screenshot**.
 
 ## Meter Checker
 
@@ -55,6 +64,8 @@ Most players only need **Optimize for my PC**. The main options are:
 | Record my microphone | Adds your voice to clips, with its own volume | Off |
 | Clip shortcut | The key that saves a clip | F8 |
 | Long recording shortcut | Starts and stops a long recording | F9 |
+| Screenshot shortcut | Saves a screenshot | F10 |
+| Trickshot screenshots | Saves a screenshot of every trickshot automatically | On |
 
 Extra options for experienced users are under **Show advanced settings**. You don't need to change them.
 

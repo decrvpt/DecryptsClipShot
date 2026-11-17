@@ -43,6 +43,8 @@
 #define KEYFRAME_MARGIN_SECONDS 2
 #define HOTKEY_SAVE 1
 #define HOTKEY_LONG 2
+#define HOTKEY_SHOT 3
+#define SHOT_EVENT_NAME L"Local\\DecryptsClipShot.Screenshot"
 #define LONG_EVENT_NAME L"Local\\DecryptsClipShot.LongRecord"
 #define LONG_COLLECT_MS 2000ULL
 #define FORTNITE_PROCESS L"FortniteClient-Win64-Shipping.exe"
@@ -55,10 +57,12 @@ typedef struct {
     wchar_t ffmpeg_path[PATH_CAP];
     wchar_t buffer_dir[PATH_CAP];
     wchar_t clips_dir[PATH_CAP];
+    wchar_t screenshots_dir[PATH_CAP];
     wchar_t work_dir[PATH_CAP];
     wchar_t game_audio_device[512];
     wchar_t manual_hotkey[128];
     wchar_t long_hotkey[128];
+    wchar_t screenshot_hotkey[128];
     wchar_t capture_backend[64];
     wchar_t video_encoder[128];
     wchar_t video_options[1024];
@@ -72,6 +76,7 @@ typedef struct {
     int post_match_seconds;
     int start_only_with_fortnite;
     int keep_rejected_clips;
+    int auto_screenshot;
     int local_replay_enabled;
     int capture_game_audio;
     int output_height;
@@ -261,6 +266,19 @@ static void get_default_clips_dir(const wchar_t *base_dir, wchar_t *out, size_t 
     join_path(out, out_count, base_dir, L"clips");
 }
 
+/* Screenshots are kept apart from clips: Pictures\Decrypt's ClipShot. */
+static void get_default_screenshots_dir(const wchar_t *base_dir, wchar_t *out, size_t out_count)
+{
+    PWSTR pictures = NULL;
+    if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_Pictures, KF_FLAG_CREATE, NULL, &pictures)) && pictures) {
+        swprintf_s(out, out_count, L"%ls\\Decrypt's ClipShot", pictures);
+        CoTaskMemFree(pictures);
+        return;
+    }
+    if (pictures) CoTaskMemFree(pictures);
+    join_path(out, out_count, base_dir, L"screenshots");
+}
+
 static void load_config(AppConfig *config)
 {
     wchar_t ini[PATH_CAP];
@@ -278,6 +296,7 @@ static void load_config(AppConfig *config)
     config->post_match_seconds = load_ini_int(ini, L"app", L"post_match_seconds", 15);
     config->start_only_with_fortnite = load_ini_int(ini, L"app", L"start_only_with_fortnite", 1);
     config->keep_rejected_clips = load_ini_int(ini, L"app", L"keep_rejected_clips", 1);
+    config->auto_screenshot = load_ini_int(ini, L"app", L"trickshot_screenshot", 1);
     config->local_replay_enabled = load_ini_int(ini, L"local_replay", L"enabled", 1);
     config->capture_game_audio = load_ini_int(ini, L"recording", L"capture_game_audio", 1);
     config->output_height = load_ini_int(ini, L"recording", L"output_height", 1080);
@@ -330,6 +349,8 @@ static void load_config(AppConfig *config)
                     config->manual_hotkey, ARRAY_COUNT(config->manual_hotkey));
     load_ini_string(ini, L"controls", L"long_recording_hotkey", L"F9",
                     config->long_hotkey, ARRAY_COUNT(config->long_hotkey));
+    load_ini_string(ini, L"controls", L"screenshot_hotkey", L"F10",
+                    config->screenshot_hotkey, ARRAY_COUNT(config->screenshot_hotkey));
 
     load_ini_string(ini, L"folders", L"buffer", L"buffer", relative, ARRAY_COUNT(relative));
     join_path(config->buffer_dir, ARRAY_COUNT(config->buffer_dir), config->base_dir, relative);
@@ -341,6 +362,11 @@ static void load_config(AppConfig *config)
         get_default_clips_dir(config->base_dir, config->clips_dir, ARRAY_COUNT(config->clips_dir));
     else
         join_path(config->clips_dir, ARRAY_COUNT(config->clips_dir), config->base_dir, relative);
+    load_ini_string(ini, L"folders", L"screenshots", L"", relative, ARRAY_COUNT(relative));
+    if (!relative[0])
+        get_default_screenshots_dir(config->base_dir, config->screenshots_dir, ARRAY_COUNT(config->screenshots_dir));
+    else
+        join_path(config->screenshots_dir, ARRAY_COUNT(config->screenshots_dir), config->base_dir, relative);
     load_ini_string(ini, L"folders", L"work", L"work", relative, ARRAY_COUNT(relative));
     join_path(config->work_dir, ARRAY_COUNT(config->work_dir), config->base_dir, relative);
 
@@ -2168,6 +2194,307 @@ static int call_local_replay_parser(const AppConfig *config, const wchar_t *repl
     return 1;
 }
 
+
+/* ---------- Screenshots ----------
+
+   Trickshotters screenshot the moment of the final kill, when Fortnite's
+   white "speed line" streaks and the damage numbers are on screen. Streak
+   strength differs a lot between players, so nothing here uses a fixed
+   threshold: every frame of a clip is scored, and the frame where that clip's
+   streaks are most visible wins.
+
+   A frame is scored at 320x180. A pixel counts as streak when it is bright
+   for this frame (above its 90th brightness percentile), close to white, and
+   clearly brighter than its surroundings (thin). Pixels that also lie on a
+   short straight run count fully; others count a quarter. Scenery that
+   happens to match stays about the same from frame to frame, while the
+   streaks flash for under a second, so the peak over time is the kill. */
+
+#define SHOT_W 320
+#define SHOT_H 180
+#define SHOT_FRAME_BYTES (SHOT_W * SHOT_H * 3)
+#define SHOT_MAX_FRAMES 6000
+
+typedef struct {
+    int lum[SHOT_W * SHOT_H];
+    int integral[(SHOT_W + 1) * (SHOT_H + 1)];
+    unsigned char mask[SHOT_W * SHOT_H];
+} ShotScratch;
+
+static double kill_effect_score(const unsigned char *rgb, ShotScratch *scratch)
+{
+    int histogram[256] = {0};
+    int threshold = 120, seen = 0, raw = 0, linear = 0;
+    static const int directions[8][2] = {
+        {0, 1}, {1, 0}, {1, 1}, {1, -1}, {1, 2}, {2, 1}, {1, -2}, {2, -1}
+    };
+
+    for (int i = 0; i < SHOT_W * SHOT_H; i++) {
+        const unsigned char *p = rgb + i * 3;
+        int value = (p[0] * 77 + p[1] * 150 + p[2] * 29) >> 8;
+        scratch->lum[i] = value;
+        histogram[value]++;
+    }
+    for (int v = 255; v >= 0; v--) {
+        seen += histogram[v];
+        if (seen >= SHOT_W * SHOT_H / 10) {
+            if (v > threshold) threshold = v;
+            break;
+        }
+    }
+
+    for (int x = 0; x <= SHOT_W; x++) scratch->integral[x] = 0;
+    for (int y = 1; y <= SHOT_H; y++) {
+        int row = 0;
+        scratch->integral[y * (SHOT_W + 1)] = 0;
+        for (int x = 1; x <= SHOT_W; x++) {
+            row += scratch->lum[(y - 1) * SHOT_W + (x - 1)];
+            scratch->integral[y * (SHOT_W + 1) + x] =
+                scratch->integral[(y - 1) * (SHOT_W + 1) + x] + row;
+        }
+    }
+
+    for (int y = 0; y < SHOT_H; y++) {
+        for (int x = 0; x < SHOT_W; x++) {
+            int i = y * SHOT_W + x;
+            const unsigned char *p = rgb + i * 3;
+            int lo = p[0], hi = p[0];
+            int x0 = x - 3 < 0 ? 0 : x - 3, x1 = x + 4 > SHOT_W ? SHOT_W : x + 4;
+            int y0 = y - 3 < 0 ? 0 : y - 3, y1 = y + 4 > SHOT_H ? SHOT_H : y + 4;
+            int area = (x1 - x0) * (y1 - y0);
+            int sum;
+            if (p[1] < lo) lo = p[1];
+            if (p[2] < lo) lo = p[2];
+            if (p[1] > hi) hi = p[1];
+            if (p[2] > hi) hi = p[2];
+            sum = scratch->integral[y1 * (SHOT_W + 1) + x1] - scratch->integral[y0 * (SHOT_W + 1) + x1]
+                - scratch->integral[y1 * (SHOT_W + 1) + x0] + scratch->integral[y0 * (SHOT_W + 1) + x0];
+            scratch->mask[i] = (unsigned char)(scratch->lum[i] > threshold && hi - lo < 90 &&
+                                               scratch->lum[i] * area - sum > 22 * area);
+            raw += scratch->mask[i];
+        }
+    }
+
+    for (int y = 0; y < SHOT_H; y++) {
+        for (int x = 0; x < SHOT_W; x++) {
+            int best = 0;
+            if (!scratch->mask[y * SHOT_W + x]) continue;
+            for (int d = 0; d < 8 && best < 6; d++) {
+                int run = 0;
+                for (int k = -3; k <= 3; k++) {
+                    int yy = y + k * directions[d][0], xx = x + k * directions[d][1];
+                    if (yy >= 0 && yy < SHOT_H && xx >= 0 && xx < SHOT_W)
+                        run += scratch->mask[yy * SHOT_W + xx];
+                }
+                if (run > best) best = run;
+            }
+            if (best >= 6) linear++;
+        }
+    }
+    return linear + 0.25 * raw;
+}
+
+static int compare_doubles(const void *left, const void *right)
+{
+    double a = *(const double *)left, b = *(const double *)right;
+    return a < b ? -1 : a > b;
+}
+
+/* Scores `length` seconds of `video` starting at `from`, sampled at `fps`.
+   Returns the time of the best frame plus its score and the window's median
+   score (how the clip normally looks). */
+static int scan_kill_effects(const AppConfig *config, const wchar_t *video, const wchar_t *work,
+                             double from, double length, double fps,
+                             double *best_time, double *best_score, double *median_score)
+{
+    wchar_t raw_path[PATH_CAP], log_path[PATH_CAP], command[COMMAND_CAP];
+    DWORD exit_code = 1;
+    FILE *file = NULL;
+    unsigned char *frame = NULL;
+    double *scores = NULL;
+    ShotScratch *scratch = NULL;
+    size_t count = 0, best = 0;
+    int ok = 0;
+
+    if (from < 0.0) from = 0.0;
+    if (length <= 0.0) return 0;
+    swprintf_s(raw_path, ARRAY_COUNT(raw_path), L"%ls\\shot_scan.raw", work);
+    swprintf_s(log_path, ARRAY_COUNT(log_path), L"%ls\\shot_scan.log", work);
+    swprintf_s(command, ARRAY_COUNT(command),
+               L"\"%ls\" -hide_banner -loglevel error -y -ss %.3f -i \"%ls\" -t %.3f -an "
+               L"-vf \"fps=%g,scale=%d:%d:flags=area,format=rgb24\" -f rawvideo \"%ls\"",
+               config->ffmpeg_path, from, video, length, fps, SHOT_W, SHOT_H, raw_path);
+    if (!run_process_wait_logged(command, work, 180000, &exit_code, log_path) || exit_code != 0)
+        goto done;
+
+    frame = (unsigned char *)malloc(SHOT_FRAME_BYTES);
+    scores = (double *)malloc(SHOT_MAX_FRAMES * sizeof(double));
+    scratch = (ShotScratch *)malloc(sizeof(ShotScratch));
+    if (!frame || !scores || !scratch || _wfopen_s(&file, raw_path, L"rb") != 0 || !file)
+        goto done;
+    while (count < SHOT_MAX_FRAMES && fread(frame, 1, SHOT_FRAME_BYTES, file) == SHOT_FRAME_BYTES) {
+        scores[count] = kill_effect_score(frame, scratch);
+        if (scores[count] > scores[best]) best = count;
+        count++;
+    }
+    if (count == 0) goto done;
+    *best_time = from + (double)best / fps;
+    *best_score = scores[best];
+    qsort(scores, count, sizeof(double), compare_doubles);
+    *median_score = scores[count / 2];
+    ok = 1;
+
+done:
+    if (file) fclose(file);
+    free(frame);
+    free(scores);
+    free(scratch);
+    DeleteFileW(raw_path);
+    DeleteFileW(log_path);
+    return ok;
+}
+
+/* Finds the frame between `from` and `to` where kill streaks are most
+   visible: a coarse pass at 10 FPS, then every frame around the best one.
+   *stands_out says whether that frame is clearly above the window's normal
+   look (used by the in-game key to decide if a kill just happened). */
+static int find_kill_moment(const AppConfig *config, const wchar_t *video, const wchar_t *work,
+                            double from, double to, double *moment, int *stands_out)
+{
+    double coarse_time, coarse_score, median, fine_time, fine_score, fine_median;
+    if (from < 0.0) from = 0.0;
+    if (to - from < 0.2) return 0;
+    if (!scan_kill_effects(config, video, work, from, to - from, 10.0,
+                           &coarse_time, &coarse_score, &median))
+        return 0;
+    *moment = coarse_time;
+    if (stands_out) *stands_out = coarse_score >= median * 1.3 + 20.0;
+    if (scan_kill_effects(config, video, work, coarse_time - 0.15, 0.3, 60.0,
+                          &fine_time, &fine_score, &fine_median) &&
+        fine_score >= coarse_score)
+        *moment = fine_time;
+    return 1;
+}
+
+static int export_frame(const AppConfig *config, const wchar_t *video, const wchar_t *work,
+                        double seconds, const wchar_t *png_path)
+{
+    wchar_t command[COMMAND_CAP], log_path[PATH_CAP];
+    DWORD exit_code = 1;
+    swprintf_s(log_path, ARRAY_COUNT(log_path), L"%ls\\shot_export.log", work);
+    swprintf_s(command, ARRAY_COUNT(command),
+               L"\"%ls\" -hide_banner -loglevel error -y -ss %.3f -i \"%ls\" -frames:v 1 -update 1 \"%ls\"",
+               config->ffmpeg_path, seconds < 0.0 ? 0.0 : seconds, video, png_path);
+    if (!run_process_wait_logged(command, work, 60000, &exit_code, log_path) || exit_code != 0)
+        return 0;
+    DeleteFileW(log_path);
+    return GetFileAttributesW(png_path) != INVALID_FILE_ATTRIBUTES;
+}
+
+/* After a trickshot is confirmed: save the frame where the final kill's
+   streaks are most visible to the screenshots folder. The final
+   kill is shortly before the match ended, and the clip ends
+   post_match_seconds after that, so only the clip's tail is searched. */
+static void save_trickshot_screenshot(const AppConfig *config, const wchar_t *clip)
+{
+    wchar_t png[PATH_CAP], name[PATH_CAP];
+    const wchar_t *slash;
+    wchar_t *dot;
+    double duration = 0.0, moment = 0.0, from;
+    if (!probe_duration(config, config->work_dir, clip, &duration)) return;
+    /* Same name as the clip (e.g. 184m_2026-09-01_19-47-36.png), but in the
+       screenshots folder so clips and pictures stay separate. */
+    slash = wcsrchr(clip, L'\\');
+    wcscpy_s(name, ARRAY_COUNT(name), slash ? slash + 1 : clip);
+    dot = wcsrchr(name, L'.');
+    if (dot) *dot = L'\0';
+    ensure_directory(config->screenshots_dir);
+    swprintf_s(png, ARRAY_COUNT(png), L"%ls\\%ls.png", config->screenshots_dir, name);
+    from = duration - config->post_match_seconds - 15.0;
+    if (!find_kill_moment(config, clip, config->work_dir, from, duration, &moment, NULL))
+        return;
+    if (export_frame(config, clip, config->work_dir, moment, png))
+        wprintf(L"Saved screenshot: %ls\n", png);
+}
+
+/* In-game screenshot key. Copies the video piece being recorded right now
+   (plus the one before it if the current one only just started), then saves
+   the newest frame, or, if a kill just happened in the last couple of
+   seconds, the frame where its streaks are most visible. */
+static void take_screenshot(const AppConfig *config, const Recorder *recorder)
+{
+    Segment *segments;
+    size_t count;
+    wchar_t folder[PATH_CAP], shots[PATH_CAP], png[PATH_CAP], timestamp[128];
+    wchar_t live_copy[PATH_CAP], live_fixed[PATH_CAP], prev_copy[PATH_CAP];
+    wchar_t command[COMMAND_CAP], log_path[PATH_CAP];
+    DWORD exit_code = 1;
+    double live_length = 0.0, prev_length = 0.0, moment = 0.0;
+    int stands_out = 0, have_prev = 0, saved = 0;
+    const wchar_t *source;
+
+    if (!recorder->running) {
+        wprintf(L"SHOT|unavailable\n");
+        return;
+    }
+    segments = (Segment *)calloc(MAX_SEGMENTS, sizeof(Segment));
+    if (!segments) return;
+    count = list_segments_matching(config->buffer_dir, L"segment_*.mkv", segments, MAX_SEGMENTS);
+    if (count == 0) {
+        free(segments);
+        wprintf(L"SHOT|failed\n");
+        return;
+    }
+    make_timestamp(timestamp, ARRAY_COUNT(timestamp));
+    swprintf_s(folder, ARRAY_COUNT(folder), L"%ls\\shot_%ls", config->work_dir, timestamp);
+    ensure_directory(folder);
+    swprintf_s(live_copy, ARRAY_COUNT(live_copy), L"%ls\\live.mkv", folder);
+    swprintf_s(live_fixed, ARRAY_COUNT(live_fixed), L"%ls\\live_fixed.mkv", folder);
+    swprintf_s(prev_copy, ARRAY_COUNT(prev_copy), L"%ls\\previous.mkv", folder);
+    swprintf_s(log_path, ARRAY_COUNT(log_path), L"%ls\\remux.log", folder);
+
+    if (CopyFileW(segments[count - 1].path, live_copy, FALSE)) {
+        /* The live piece is unfinished; a quick copy-remux gives it a proper
+           ending so its length can be measured and seeked. */
+        swprintf_s(command, ARRAY_COUNT(command),
+                   L"\"%ls\" -hide_banner -loglevel error -y -i \"%ls\" -map 0:v -c copy \"%ls\"",
+                   config->ffmpeg_path, live_copy, live_fixed);
+        if (run_process_wait_logged(command, folder, 60000, &exit_code, log_path) && exit_code == 0)
+            probe_duration(config, folder, live_fixed, &live_length);
+    }
+    if (live_length < 2.5 && count >= 2 && CopyFileW(segments[count - 2].path, prev_copy, FALSE))
+        have_prev = probe_duration(config, folder, prev_copy, &prev_length);
+    free(segments);
+
+    wcscpy_s(shots, ARRAY_COUNT(shots), config->screenshots_dir);
+    ensure_directory(shots);
+    swprintf_s(png, ARRAY_COUNT(png), L"%ls\\Screenshot_%ls.png", shots, timestamp);
+
+    if (live_length >= 0.3) {
+        source = live_fixed;
+        if (find_kill_moment(config, source, folder, live_length - 2.5, live_length, &moment, &stands_out) &&
+            stands_out)
+            saved = export_frame(config, source, folder, moment, png);
+        if (!saved) saved = export_frame(config, source, folder, live_length - 0.05, png);
+    } else if (have_prev && prev_length > 0.3) {
+        source = prev_copy;
+        if (find_kill_moment(config, source, folder, prev_length - 2.5, prev_length, &moment, &stands_out) &&
+            stands_out)
+            saved = export_frame(config, source, folder, moment, png);
+        if (!saved) saved = export_frame(config, source, folder, prev_length - 0.05, png);
+    }
+
+    DeleteFileW(live_copy);
+    DeleteFileW(live_fixed);
+    DeleteFileW(prev_copy);
+    DeleteFileW(log_path);
+    swprintf_s(log_path, ARRAY_COUNT(log_path), L"%ls\\probe.log", folder);
+    DeleteFileW(log_path);
+    RemoveDirectoryW(folder);
+    if (saved) wprintf(L"SHOT|saved|%ls\n", png);
+    else wprintf(L"SHOT|failed\n");
+}
+
 static void classify_pending_clip(const AppConfig *config, const wchar_t *clip,
                                   const wchar_t *replay)
 {
@@ -2198,9 +2525,10 @@ static void classify_pending_clip(const AppConfig *config, const wchar_t *clip,
         make_timestamp(timestamp, ARRAY_COUNT(timestamp));
         swprintf_s(destination, ARRAY_COUNT(destination), L"%ls\\%.0fm_%ls.mp4",
                    destination_dir, meters, timestamp);
-        if (MoveFileExW(clip, destination, MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING))
+        if (MoveFileExW(clip, destination, MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING)) {
             wprintf(L"Qualified trickshot (%ls final kill, %.0fm): %ls\n", shot_label, meters, destination);
-        else
+            if (config->auto_screenshot) save_trickshot_screenshot(config, destination);
+        } else
             print_last_error(L"Could not move qualified clip");
     } else if (config->keep_rejected_clips) {
         category = L"Rejected";
@@ -2216,7 +2544,39 @@ static void classify_pending_clip(const AppConfig *config, const wchar_t *clip,
     }
 }
 
-int wmain(void)
+/* Used by the app's clip viewer:
+     TrickClip.exe --find-kill <video> <from> <to>   prints KILL|<seconds>
+     TrickClip.exe --screenshot <video> <seconds> <out.png>   prints SHOT|saved|<path> */
+static int run_command_line(int argc, wchar_t **argv)
+{
+    AppConfig config;
+    wchar_t work[PATH_CAP];
+    load_config(&config);
+    swprintf_s(work, ARRAY_COUNT(work), L"%ls\\viewer", config.work_dir);
+    ensure_directory(config.work_dir);
+    ensure_directory(work);
+    if (argc >= 5 && wcscmp(argv[1], L"--find-kill") == 0) {
+        double moment = 0.0;
+        if (find_kill_moment(&config, argv[2], work, _wtof(argv[3]), _wtof(argv[4]), &moment, NULL)) {
+            wprintf(L"KILL|%.3f\n", moment);
+            return 0;
+        }
+        wprintf(L"KILL|none\n");
+        return 1;
+    }
+    if (argc >= 5 && wcscmp(argv[1], L"--screenshot") == 0) {
+        if (export_frame(&config, argv[2], work, _wtof(argv[3]), argv[4])) {
+            wprintf(L"SHOT|saved|%ls\n", argv[4]);
+            return 0;
+        }
+        wprintf(L"SHOT|failed\n");
+        return 1;
+    }
+    wprintf(L"Unknown command.\n");
+    return 1;
+}
+
+int wmain(int argc, wchar_t **argv)
 {
     AppConfig config;
     Recorder recorder;
@@ -2230,6 +2590,10 @@ int wmain(void)
     HANDLE save_event;
     HANDLE stop_event;
     HANDLE long_event;
+    HANDLE shot_event;
+    int shot_hotkey_registered;
+    UINT shot_hotkey_modifiers;
+    UINT shot_hotkey_virtual_key;
     LongRecording long_recording;
     int long_hotkey_registered;
     UINT long_hotkey_modifiers;
@@ -2243,6 +2607,7 @@ int wmain(void)
     SetConsoleOutputCP(CP_UTF8);
     setvbuf(stdout, NULL, _IONBF, 0);
     SetConsoleCtrlHandler(console_handler, TRUE);
+    if (argc > 1) return run_command_line(argc, argv);
 
     engine_mutex = CreateMutexW(NULL, FALSE, ENGINE_MUTEX_NAME);
     if (!engine_mutex) {
@@ -2266,11 +2631,13 @@ int wmain(void)
     save_event = CreateEventW(NULL, FALSE, FALSE, SAVE_EVENT_NAME);
     stop_event = CreateEventW(NULL, FALSE, FALSE, STOP_EVENT_NAME);
     long_event = CreateEventW(NULL, FALSE, FALSE, LONG_EVENT_NAME);
-    if (!save_event || !stop_event || !long_event) {
+    shot_event = CreateEventW(NULL, FALSE, FALSE, SHOT_EVENT_NAME);
+    if (!save_event || !stop_event || !long_event || !shot_event) {
         print_last_error(L"Could not create GUI control events");
         if (save_event) CloseHandle(save_event);
         if (stop_event) CloseHandle(stop_event);
         if (long_event) CloseHandle(long_event);
+        if (shot_event) CloseHandle(shot_event);
         CloseHandle(engine_mutex);
         return 1;
     }
@@ -2298,6 +2665,17 @@ int wmain(void)
         wprintf(L"Warning: %ls could not be set up for long recording. Another app may be using it; the Dashboard button still works.\n",
                 config.long_hotkey);
 
+    if (!parse_hotkey(config.screenshot_hotkey, &shot_hotkey_modifiers, &shot_hotkey_virtual_key)) {
+        wcscpy_s(config.screenshot_hotkey, ARRAY_COUNT(config.screenshot_hotkey), L"F10");
+        shot_hotkey_modifiers = MOD_NOREPEAT;
+        shot_hotkey_virtual_key = VK_F10;
+    }
+    shot_hotkey_registered = RegisterHotKey(NULL, HOTKEY_SHOT,
+                                            shot_hotkey_modifiers, shot_hotkey_virtual_key);
+    if (!shot_hotkey_registered)
+        wprintf(L"Warning: %ls could not be set up for screenshots. Another app may be using it.\n",
+                config.screenshot_hotkey);
+
     wprintf(L"Decrypt's ClipShot engine\n");
     wprintf(L"%ls saves a manual clip.\n", config.manual_hotkey);
     wprintf(L"Buffer directory: %ls\n", config.buffer_dir);
@@ -2315,6 +2693,8 @@ int wmain(void)
             } else if (message.message == WM_HOTKEY && message.wParam == HOTKEY_LONG) {
                 if (long_recording.active) long_record_stop(&config, &recorder, &long_recording);
                 else long_record_start(&config, &recorder, &long_recording);
+            } else if (message.message == WM_HOTKEY && message.wParam == HOTKEY_SHOT) {
+                take_screenshot(&config, &recorder);
             }
         }
 
@@ -2326,6 +2706,8 @@ int wmain(void)
             if (long_recording.active) long_record_stop(&config, &recorder, &long_recording);
             else long_record_start(&config, &recorder, &long_recording);
         }
+        if (WaitForSingleObject(shot_event, 0) == WAIT_OBJECT_0)
+            take_screenshot(&config, &recorder);
         if (WaitForSingleObject(stop_event, 0) == WAIT_OBJECT_0)
             InterlockedExchange(&g_quit, 1);
         long_record_poll(&config, &long_recording);
@@ -2391,7 +2773,9 @@ int wmain(void)
     long_record_stop(&config, &recorder, &long_recording);
     if (save_hotkey_registered) UnregisterHotKey(NULL, HOTKEY_SAVE);
     if (long_hotkey_registered) UnregisterHotKey(NULL, HOTKEY_LONG);
+    if (shot_hotkey_registered) UnregisterHotKey(NULL, HOTKEY_SHOT);
     CloseHandle(long_event);
+    CloseHandle(shot_event);
     CloseHandle(save_event);
     CloseHandle(stop_event);
     CloseHandle(engine_mutex);

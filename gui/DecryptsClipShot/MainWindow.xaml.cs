@@ -26,9 +26,11 @@ public partial class MainWindow : Window
     private const string DefaultOutputDevice = "Default Windows output";
     private const string SaveEventName = @"Local\DecryptsClipShot.Save";
     private const string LongEventName = @"Local\DecryptsClipShot.LongRecord";
+    private const string ShotEventName = @"Local\DecryptsClipShot.Screenshot";
     private const string StopEventName = @"Local\DecryptsClipShot.Stop";
     private readonly ObservableCollection<ClipItem> _trickshotClips = [];
     private readonly ObservableCollection<ClipItem> _otherClips = [];
+    private readonly ObservableCollection<ClipItem> _screenshots = [];
     private readonly ObservableCollection<ClipItem> _recentClips = [];
     private readonly ObservableCollection<string> _outputDevices = [];
     private readonly ObservableCollection<string> _microphones = [];
@@ -71,6 +73,7 @@ public partial class MainWindow : Window
         CleanupOrphanedBundledFfmpeg();
         TrickshotClipsList.ItemsSource = _trickshotClips;
         OtherClipsList.ItemsSource = _otherClips;
+        ScreenshotsList.ItemsSource = _screenshots;
         RecentClipsList.ItemsSource = _recentClips;
         GameAudioDeviceBox.ItemsSource = _outputDevices;
         MicrophoneDeviceBox.ItemsSource = _microphones;
@@ -242,7 +245,9 @@ public partial class MainWindow : Window
             : 100;
         HotkeyBox.Text = ReadIni("controls", "manual_clip_hotkey", "F8");
         LongHotkeyBox.Text = ReadIni("controls", "long_recording_hotkey", "F9");
-        HotkeyHintText.Text = $"{HotkeyBox.Text} saves a clip  •  {LongHotkeyBox.Text} long recording";
+        ShotHotkeyBox.Text = ReadIni("controls", "screenshot_hotkey", "F10");
+        TrickshotScreenshotCheck.IsChecked = ReadIni("app", "trickshot_screenshot", "1") == "1";
+        UpdateHotkeyHint();
         FortniteOnlyCheck.IsChecked = ReadIni("app", "start_only_with_fortnite", "1") == "1";
         LocalReplayCheck.IsChecked = ReadIni("local_replay", "enabled", "1") == "1";
         KeepRejectedCheck.IsChecked = ReadIni("app", "keep_rejected_clips", "1") == "1";
@@ -485,6 +490,11 @@ public partial class MainWindow : Window
                 HandleLongRecordLine(line);
                 return;
             }
+            if (line.StartsWith("SHOT|", StringComparison.OrdinalIgnoreCase))
+            {
+                HandleScreenshotLine(line);
+                return;
+            }
 
             string? friendly = FriendlyEngineMessage(line);
             if (friendly is not null) AddActivity(friendly);
@@ -494,6 +504,8 @@ public partial class MainWindow : Window
                 SetStatus("Waiting for Fortnite", true, false);
             else if (line.Contains("Fortnite detected", StringComparison.OrdinalIgnoreCase))
                 SetStatus("Fortnite detected", true, _captureActive);
+            else if (line.StartsWith("Saved screenshot", StringComparison.OrdinalIgnoreCase))
+                _ = RefreshScreenshotsAsync();
             else if (line.Contains("Saved clip", StringComparison.OrdinalIgnoreCase) ||
                      line.Contains("Saved recording", StringComparison.OrdinalIgnoreCase) ||
                      line.Contains("Qualified", StringComparison.OrdinalIgnoreCase))
@@ -580,6 +592,22 @@ public partial class MainWindow : Window
         }
     }
 
+    private void HandleScreenshotLine(string line)
+    {
+        string[] parts = line.Split('|', 3);
+        string state = parts.Length > 1 ? parts[1] : "";
+        if (state.Equals("saved", StringComparison.OrdinalIgnoreCase))
+        {
+            AddActivity("Screenshot saved");
+            ShowTrayTip("Screenshot saved", "Find it on the Screenshots page.");
+            _ = RefreshScreenshotsAsync();
+        }
+        else if (state.Equals("unavailable", StringComparison.OrdinalIgnoreCase))
+            AddActivity("Screenshots work once ClipShot is recording Fortnite.");
+        else
+            AddActivity("Couldn't take that screenshot. Try again in a second.");
+    }
+
     private void SetLongRecording(bool active)
     {
         bool wasActive = _longRecordStarted is not null;
@@ -623,6 +651,7 @@ public partial class MainWindow : Window
         static bool Starts(string text, string part) => text.StartsWith(part, StringComparison.OrdinalIgnoreCase);
 
         if (Starts(line, "Saved clip:")) return $"Clip saved: {Path.GetFileName(line[11..].Trim())}";
+        if (Starts(line, "Saved screenshot:")) return "Trickshot screenshot saved";
         if (Starts(line, "Saved recording:") || Starts(line, "Long recording started")) return null; // shown by the LONG| lines
         if (Has(line, "Qualified trickshot"))
         {
@@ -646,6 +675,9 @@ public partial class MainWindow : Window
             return "Your PC is struggling to record. Try Optimize for my PC or 30 FPS in Settings.";
         if (Has(line, "Desktop Duplication was unavailable"))
             return "Switched to a slower recording method for your PC.";
+        if (Has(line, "could not be set up for screenshots"))
+            return line.Replace("Warning: ", "").Replace("could not be set up for screenshots. Another app may be using it.",
+                "is used by another app, so screenshots need a different key. Change it in Settings.");
         if (Has(line, "could not be registered") || Has(line, "could not be set up for long recording"))
             return line.Replace("Warning: ", "").Replace("could not be registered; GUI controls remain available.",
                 "is used by another app. Pick a different shortcut in Settings.");
@@ -876,14 +908,15 @@ public partial class MainWindow : Window
             return false;
         }
 
-        if (string.IsNullOrWhiteSpace(HotkeyBox.Text) || string.IsNullOrWhiteSpace(LongHotkeyBox.Text))
+        string[] shortcuts = [HotkeyBox.Text.Trim(), LongHotkeyBox.Text.Trim(), ShotHotkeyBox.Text.Trim()];
+        if (shortcuts.Any(string.IsNullOrWhiteSpace))
         {
-            MessageBox.Show("Choose a shortcut for saving clips and for long recording.", "Shortcut needed", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show("Choose a shortcut for saving clips, long recording and screenshots.", "Shortcut needed", MessageBoxButton.OK, MessageBoxImage.Warning);
             return false;
         }
-        if (string.Equals(HotkeyBox.Text.Trim(), LongHotkeyBox.Text.Trim(), StringComparison.OrdinalIgnoreCase))
+        if (shortcuts.Distinct(StringComparer.OrdinalIgnoreCase).Count() != shortcuts.Length)
         {
-            MessageBox.Show("The clip shortcut and the long recording shortcut must be different keys.", "Same shortcut twice", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show("Each shortcut (clip, long recording, screenshot) needs its own key.", "Same shortcut twice", MessageBoxButton.OK, MessageBoxImage.Warning);
             return false;
         }
         if (GameAudioCheck.IsChecked == true && string.IsNullOrWhiteSpace(GameAudioDeviceBox.Text))
@@ -926,7 +959,9 @@ public partial class MainWindow : Window
         WriteIni("folders", "clips", clipsFolder);
         WriteIni("controls", "manual_clip_hotkey", HotkeyBox.Text.Trim());
         WriteIni("controls", "long_recording_hotkey", LongHotkeyBox.Text.Trim());
-        HotkeyHintText.Text = $"{HotkeyBox.Text.Trim()} saves a clip  •  {LongHotkeyBox.Text.Trim()} long recording";
+        WriteIni("controls", "screenshot_hotkey", ShotHotkeyBox.Text.Trim());
+        WriteIni("app", "trickshot_screenshot", TrickshotScreenshotCheck.IsChecked == true ? "1" : "0");
+        UpdateHotkeyHint();
         WriteIni("app", "start_only_with_fortnite", FortniteOnlyCheck.IsChecked == true ? "1" : "0");
         WriteIni("local_replay", "enabled", LocalReplayCheck.IsChecked == true ? "1" : "0");
         WriteIni("app", "keep_rejected_clips", KeepRejectedCheck.IsChecked == true ? "1" : "0");
@@ -1199,6 +1234,10 @@ public partial class MainWindow : Window
 
     private void CaptureHotkey_Click(object sender, RoutedEventArgs e) => BeginHotkeyCapture(HotkeyBox, HotkeyCaptureButton);
     private void CaptureLongHotkey_Click(object sender, RoutedEventArgs e) => BeginHotkeyCapture(LongHotkeyBox, LongHotkeyCaptureButton);
+    private void CaptureShotHotkey_Click(object sender, RoutedEventArgs e) => BeginHotkeyCapture(ShotHotkeyBox, ShotHotkeyCaptureButton);
+
+    private void UpdateHotkeyHint() =>
+        HotkeyHintText.Text = $"{HotkeyBox.Text.Trim()} clip  •  {LongHotkeyBox.Text.Trim()} long recording  •  {ShotHotkeyBox.Text.Trim()} screenshot";
 
     private void BeginHotkeyCapture(TextBox target, Button button)
     {
@@ -1236,7 +1275,7 @@ public partial class MainWindow : Window
         if (modifiers.HasFlag(ModifierKeys.Windows)) parts.Add("Win");
         parts.Add(keyName);
         (_hotkeyTarget ?? HotkeyBox).Text = string.Join("+", parts);
-        HotkeyHintText.Text = $"{HotkeyBox.Text} saves a clip  •  {LongHotkeyBox.Text} long recording";
+        UpdateHotkeyHint();
         _capturingHotkey = false;
         if (_hotkeyTargetButton is not null) _hotkeyTargetButton.Content = "Set shortcut";
         e.Handled = true;
@@ -1418,6 +1457,112 @@ public partial class MainWindow : Window
         dialog.Content = border;
         dialog.Loaded += (_, _) => { input.Focus(); input.SelectAll(); };
         return dialog.ShowDialog() == true ? input.Text : null;
+    }
+
+    private static string DefaultScreenshotsDirectory => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Decrypt's ClipShot");
+
+    // Screenshots live apart from clips (Pictures, not Videos). The engine applies the same rule.
+    private string ScreenshotsDirectory
+    {
+        get
+        {
+            string value = ReadIni("folders", "screenshots", "").Trim();
+            return value.Length == 0 ? DefaultScreenshotsDirectory
+                : Path.IsPathRooted(value) ? value : Path.Combine(BaseDirectory, value);
+        }
+    }
+
+    private bool _refreshingScreenshots;
+
+    private async Task RefreshScreenshotsAsync()
+    {
+        if (_refreshingScreenshots) return;
+        _refreshingScreenshots = true;
+        try
+        {
+            string folder = ScreenshotsDirectory;
+            string thumbnails = Path.Combine(ResolveConfiguredPath("folders", "work", "work"), "thumbnails");
+            Directory.CreateDirectory(folder);
+            Directory.CreateDirectory(thumbnails);
+            var files = await Task.Run(() => Directory.EnumerateFiles(folder, "*.png", SearchOption.TopDirectoryOnly)
+                .Concat(Directory.EnumerateFiles(folder, "*.jpg", SearchOption.TopDirectoryOnly))
+                .Select(path => new FileInfo(path)).OrderByDescending(file => file.LastWriteTime).ToList());
+            _screenshots.Clear();
+            foreach (FileInfo file in files)
+            {
+                string thumb = await EnsureImageThumbnailAsync(file.FullName, thumbnails);
+                _screenshots.Add(new ClipItem
+                {
+                    Title = Path.GetFileNameWithoutExtension(file.Name).Replace('_', ' '),
+                    Category = "Screenshot",
+                    Details = $"{file.LastWriteTime:g}",
+                    FullPath = file.FullName,
+                    ThumbnailPath = File.Exists(thumb) ? thumb : null
+                });
+            }
+            ScreenshotsEmptyText.Visibility = _screenshots.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            ScreenshotsEmptyText.Text = $"No screenshots yet. Trickshots get one automatically, press {ShotHotkeyBox.Text} in game, or open a clip in My Clips and click Screenshot.";
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        finally
+        {
+            _refreshingScreenshots = false;
+        }
+    }
+
+    // Small copies for the Screenshots page, so full-size pictures aren't loaded (or locked) by the list.
+    private async Task<string> EnsureImageThumbnailAsync(string imagePath, string thumbnailDirectory)
+    {
+        var info = new FileInfo(imagePath);
+        string key = $"{imagePath}|{info.LastWriteTimeUtc.Ticks}";
+        string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..16];
+        string destination = Path.Combine(thumbnailDirectory, "shot_" + hash + ".jpg");
+        if (File.Exists(destination)) return destination;
+        try
+        {
+            var process = Process.Start(new ProcessStartInfo(ResolveFfmpegExecutable(),
+                $"-hide_banner -loglevel error -y -i \"{imagePath}\" -frames:v 1 -vf scale=480:-2 -q:v 3 \"{destination}\"")
+            { UseShellExecute = false, CreateNoWindow = true });
+            if (process is not null) await process.WaitForExitAsync();
+        }
+        catch
+        {
+        }
+        return destination;
+    }
+
+    private void RefreshScreenshots_Click(object sender, RoutedEventArgs e) => _ = RefreshScreenshotsAsync();
+
+    private void OpenScreenshotsFolder_Click(object sender, RoutedEventArgs e)
+    {
+        string folder = ScreenshotsDirectory;
+        Directory.CreateDirectory(folder);
+        Process.Start(new ProcessStartInfo("explorer.exe", $"\"{folder}\"") { UseShellExecute = true });
+    }
+
+    private void ScreenshotsList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (ScreenshotsList.SelectedItem is ClipItem shot && File.Exists(shot.FullPath))
+            Process.Start(new ProcessStartInfo(shot.FullPath) { UseShellExecute = true });
+    }
+
+    private void ClipScreenshot_Click(object sender, RoutedEventArgs e)
+    {
+        ClipItem? clip = SelectedClip();
+        if (clip is null || !File.Exists(clip.FullPath))
+        {
+            MessageBox.Show("Click a clip first, then click Screenshot.", "Pick a clip", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var window = new ScreenshotWindow(clip.FullPath, EnginePath, ScreenshotsDirectory) { Owner = this };
+        window.ShowDialog();
+        if (window.LastSavedPath is not null)
+        {
+            AddActivity("Screenshot saved");
+            _ = RefreshScreenshotsAsync();
+        }
     }
 
     private void OpenClipsFolder_Click(object sender, RoutedEventArgs e)
@@ -1704,17 +1849,20 @@ public partial class MainWindow : Window
     {
         DashboardPanel.Visibility = panel == DashboardPanel ? Visibility.Visible : Visibility.Collapsed;
         ClipsPanel.Visibility = panel == ClipsPanel ? Visibility.Visible : Visibility.Collapsed;
+        ScreenshotsPanel.Visibility = panel == ScreenshotsPanel ? Visibility.Visible : Visibility.Collapsed;
         ReplayAnalyzerPanel.Visibility = panel == ReplayAnalyzerPanel ? Visibility.Visible : Visibility.Collapsed;
         SettingsPanel.Visibility = panel == SettingsPanel ? Visibility.Visible : Visibility.Collapsed;
         // Highlight the current page in the sidebar.
         DashboardNav.Tag = panel == DashboardPanel ? "Active" : null;
         ClipsNav.Tag = panel == ClipsPanel ? "Active" : null;
+        ScreenshotsNav.Tag = panel == ScreenshotsPanel ? "Active" : null;
         ReplayAnalyzerNav.Tag = panel == ReplayAnalyzerPanel ? "Active" : null;
         SettingsNav.Tag = panel == SettingsPanel ? "Active" : null;
     }
 
     private void DashboardNav_Click(object sender, RoutedEventArgs e) => ShowPanel(DashboardPanel);
     private void ClipsNav_Click(object sender, RoutedEventArgs e) { ShowPanel(ClipsPanel); _ = RefreshClipsAsync(); }
+    private void ScreenshotsNav_Click(object sender, RoutedEventArgs e) { ShowPanel(ScreenshotsPanel); _ = RefreshScreenshotsAsync(); }
     private void ReplayAnalyzerNav_Click(object sender, RoutedEventArgs e) => ShowPanel(ReplayAnalyzerPanel);
     private void SettingsNav_Click(object sender, RoutedEventArgs e) => ShowPanel(SettingsPanel);
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
