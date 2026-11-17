@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.9
+
+- **Trickshot screenshots work in snowy areas.** Edges of snow against dark ground looked like kill streaks, so ClipShot sometimes saved a frame from before the kill. Kill streaks are now recognized as long, thin lines that point outward from the middle of the screen with darker scenery on both sides; snow edges only have one dark side. In testing, snow scores about 20 and real streaks over 400.
+- ClipShot now finds the damage number first (nothing else looks like it, snow included), then looks for the kill streaks in the seconds right after the hit.
+
 ## 1.0.8
 
 - **Steadier sound sync in clips.** The sound and video recorders now note exactly where every recorded piece sits in time, and each clip's sound is lined up from those notes. Before, the match-up was estimated at the moment you saved, from progress reports that vary by up to a tenth of a second, so the sync wobbled from clip to clip. The old method is still used as a backup, for example right after the sound recorder restarts.

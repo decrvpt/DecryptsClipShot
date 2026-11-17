@@ -2412,11 +2412,9 @@ static int call_local_replay_parser(const AppConfig *config, const wchar_t *repl
    streaks are most visible wins.
 
    A frame is scored at 320x180. A pixel counts as streak when it is bright
-   for this frame (above its 90th brightness percentile), close to white, and
-   clearly brighter than its surroundings (thin). Pixels that also lie on a
-   short straight run count fully; others count a quarter. Scenery that
-   happens to match stays about the same from frame to frame, while the
-   streaks flash for under a second, so the peak over time is the kill. */
+   for this frame, close to white, lies on a long straight line pointing
+   roughly away from the middle of the screen, and has darker scenery on
+   both sides of that line (snow edges only have one dark side). */
 
 #define SHOT_W 320
 #define SHOT_H 180
@@ -2431,11 +2429,23 @@ typedef struct {
 
 static double kill_effect_score(const unsigned char *rgb, ShotScratch *scratch)
 {
-    int histogram[256] = {0};
-    int threshold = 120, seen = 0, raw = 0, linear = 0;
+    /* Line directions checked (dy, dx) and how far a line must run. */
     static const int directions[8][2] = {
         {0, 1}, {1, 0}, {1, 1}, {1, -1}, {1, 2}, {2, 1}, {1, -2}, {2, -1}
     };
+    const int half = 5, needed = 9, side = 2, contrast = 20;
+    const double max_angle = 20.0, pi = 3.14159265358979323846;
+    double direction_angle[8];
+    int perpendicular[8][2];
+    int histogram[256] = {0};
+    int threshold = 120, seen = 0, count = 0;
+
+    for (int d = 0; d < 8; d++) {
+        double dy = directions[d][0], dx = directions[d][1], length = sqrt(dy * dy + dx * dx);
+        direction_angle[d] = atan2(dy, dx) * 180.0 / pi;
+        perpendicular[d][0] = (int)lround(-dx / length * side);
+        perpendicular[d][1] = (int)lround(dy / length * side);
+    }
 
     for (int i = 0; i < SHOT_W * SHOT_H; i++) {
         const unsigned char *p = rgb + i * 3;
@@ -2462,6 +2472,7 @@ static double kill_effect_score(const unsigned char *rgb, ShotScratch *scratch)
         }
     }
 
+    /* Bright, near-white pixels clearly brighter than their surroundings. */
     for (int y = 0; y < SHOT_H; y++) {
         for (int x = 0; x < SHOT_W; x++) {
             int i = y * SHOT_W + x;
@@ -2479,27 +2490,47 @@ static double kill_effect_score(const unsigned char *rgb, ShotScratch *scratch)
                 - scratch->integral[y1 * (SHOT_W + 1) + x0] + scratch->integral[y0 * (SHOT_W + 1) + x0];
             scratch->mask[i] = (unsigned char)(scratch->lum[i] > threshold && hi - lo < 90 &&
                                                scratch->lum[i] * area - sum > 22 * area);
-            raw += scratch->mask[i];
         }
     }
 
+    /* Count streak pixels: on a long straight bright line that points
+       roughly away from the middle of the screen, with darker scenery on
+       BOTH sides of the line. Snow edges are bright on one side only, and
+       rarely long, straight and pointing outward, so they don't count. */
     for (int y = 0; y < SHOT_H; y++) {
         for (int x = 0; x < SHOT_W; x++) {
-            int best = 0;
-            if (!scratch->mask[y * SHOT_W + x]) continue;
-            for (int d = 0; d < 8 && best < 6; d++) {
-                int run = 0;
-                for (int k = -3; k <= 3; k++) {
+            int i = y * SHOT_W + x, lum = scratch->lum[i];
+            double ry = y - SHOT_H * 0.5, rx = x - SHOT_W * 0.5, radial;
+            if (!scratch->mask[i]) continue;
+            /* Skip the player in the middle. */
+            if ((ry / SHOT_H) * (ry / SHOT_H) + (rx / SHOT_W) * (rx / SHOT_W) <= 0.12 * 0.12) continue;
+            radial = atan2(ry, rx) * 180.0 / pi;
+            for (int d = 0; d < 8; d++) {
+                double diff = fmod(fabs(radial - direction_angle[d]), 180.0);
+                int run = 0, ay, ax, by, bx;
+                if (diff > 90.0) diff = 180.0 - diff;
+                if (diff > max_angle) continue;
+                for (int k = -half; k <= half; k++) {
                     int yy = y + k * directions[d][0], xx = x + k * directions[d][1];
                     if (yy >= 0 && yy < SHOT_H && xx >= 0 && xx < SHOT_W)
                         run += scratch->mask[yy * SHOT_W + xx];
                 }
-                if (run > best) best = run;
+                if (run < needed) continue;
+                ay = y + perpendicular[d][0];
+                ax = x + perpendicular[d][1];
+                by = y - perpendicular[d][0];
+                bx = x - perpendicular[d][1];
+                if (ay < 0 || ay >= SHOT_H || ax < 0 || ax >= SHOT_W ||
+                    by < 0 || by >= SHOT_H || bx < 0 || bx >= SHOT_W) continue;
+                if (scratch->lum[ay * SHOT_W + ax] < lum - contrast &&
+                    scratch->lum[by * SHOT_W + bx] < lum - contrast) {
+                    count++;
+                    break;
+                }
             }
-            if (best >= 6) linear++;
         }
     }
-    return linear + 0.25 * raw;
+    return count;
 }
 
 static int compare_doubles(const void *left, const void *right)
@@ -2794,7 +2825,7 @@ done:
 
 static int streaks_stand_out(const FrameScan *scan)
 {
-    return scan->streak_best >= scan->streak_median * 1.3 + 20.0;
+    return scan->streak_best >= scan->streak_median * 1.5 + 40.0;
 }
 
 
@@ -2817,8 +2848,7 @@ static int find_kill_moment(const AppConfig *config, const wchar_t *video, const
     return 1;
 }
 
-/* Where the damage number is clearest. Any digit row at all is strong
-   evidence (other things score 0), so *found just means one was seen. */
+/* Where the damage number is clearest. */
 static int find_damage_moment(const AppConfig *config, const wchar_t *video, const wchar_t *work,
                               double from, double to, double *moment, int *found)
 {
@@ -2827,7 +2857,10 @@ static int find_damage_moment(const AppConfig *config, const wchar_t *video, con
     if (to - from < 0.2) return 0;
     if (!scan_damage(config, video, work, from, to - from, 20.0, &coarse_time, &coarse_score)) return 0;
     *moment = coarse_time;
-    if (found) *found = coarse_score >= 20.0;
+    /* Real damage numbers score 85+ at normal sizes (the smallest seen in
+       game, a white "105" over snow, scored 108); snow and other scenery
+       stayed under 45 in testing. */
+    if (found) *found = coarse_score >= 60.0;
     if (coarse_score > 0.0 &&
         scan_damage(config, video, work, coarse_time - 0.1, 0.2, 60.0, &fine_time, &fine_score) &&
         fine_score >= coarse_score)
@@ -2962,21 +2995,32 @@ static void analyze_trickshot_clip(const AppConfig *config, const wchar_t *clip,
         return;
     }
 
-    if (!result->victim_is_bot &&
-        find_kill_moment(config, clip, config->work_dir, from, to, &out->streak_moment, &stands_out) &&
-        stands_out) {
-        out->streaks_found = 1;
-        kill_time = out->streak_moment;
-        /* The streaks peak once the victory camera kicks in; the damage
-           number popped up at the hit, a little before that. */
-        from = kill_time - 2.5;
-        to = kill_time + 0.3;
-    }
+    /* The damage number comes first: it pops up at the hit and nothing
+       else (snow, sparkles, the victory camera) looks like it. Then the
+       streaks are searched in the few seconds after the hit, when the
+       victory camera shows them. Without a number, the streaks are searched
+       in the whole window and the number near them. */
     if (find_damage_moment(config, clip, config->work_dir, from, to, &out->damage_moment, &stands_out) &&
         stands_out) {
         out->damage_found = 1;
-        /* The hit is the better moment to check scoped/no-scope. */
         kill_time = out->damage_moment;
+    }
+    if (!result->victim_is_bot) {
+        double streak_from = out->damage_found ? out->damage_moment - 0.5 : from;
+        double streak_to = out->damage_found ? out->damage_moment + 3.5 : to;
+        if (streak_to > duration) streak_to = duration;
+        if (find_kill_moment(config, clip, config->work_dir, streak_from, streak_to,
+                             &out->streak_moment, &stands_out) && stands_out) {
+            out->streaks_found = 1;
+            if (!out->damage_found) {
+                kill_time = out->streak_moment;
+                if (find_damage_moment(config, clip, config->work_dir, kill_time - 2.5, kill_time + 0.3,
+                                       &out->damage_moment, &stands_out) && stands_out) {
+                    out->damage_found = 1;
+                    kill_time = out->damage_moment;
+                }
+            }
+        }
     }
 
     if (kill_time >= 0.0 && result->sniper && result->weapon_has_scope &&
