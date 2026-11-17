@@ -55,7 +55,7 @@ public partial class ScreenshotWindow : Window
 
     private void Player_MediaFailed(object? sender, ExceptionRoutedEventArgs e)
     {
-        StatusText.Text = "This clip can't be previewed here, but Find kill moment and Save screenshot still work.";
+        StatusText.Text = "This clip can't be previewed here, but the Find buttons and Save screenshot still work.";
     }
 
     private void Player_MediaEnded(object sender, RoutedEventArgs e)
@@ -118,7 +118,17 @@ public partial class ScreenshotWindow : Window
         else if (e.Key == Key.Space) { Play_Click(sender, e); e.Handled = true; }
     }
 
-    private async void FindKill_Click(object sender, RoutedEventArgs e)
+    private void FindKill_Click(object sender, RoutedEventArgs e) =>
+        _ = FindMomentAsync("--find-kill", "Looking for the kill streaks…",
+            "Jumped to where the streaks are most visible. Use the frame buttons to fine-tune, then Save screenshot.",
+            "Couldn't find kill streaks here (kills on bots don't have them). Pick the moment yourself.");
+
+    private void FindDamage_Click(object sender, RoutedEventArgs e) =>
+        _ = FindMomentAsync("--find-damage", "Looking for the damage number…",
+            "Jumped to where the damage number is clearest. Use the frame buttons to fine-tune, then Save screenshot.",
+            "Couldn't find a damage number here. Pick the moment yourself.");
+
+    private async Task FindMomentAsync(string command, string busyText, string foundText, string missingText)
     {
         if (_busy) return;
         PausePlayback();
@@ -130,19 +140,19 @@ public partial class ScreenshotWindow : Window
             from = Math.Max(0.0, Position - 30.0);
             to = from + 60.0;
         }
-        SetBusy(true, "Looking for the kill streaks…");
-        string? output = await RunEngineAsync("--find-kill", _clipPath,
+        SetBusy(true, busyText);
+        string? output = await RunEngineAsync(command, _clipPath,
             from.ToString("0.###", CultureInfo.InvariantCulture), to.ToString("0.###", CultureInfo.InvariantCulture));
         SetBusy(false, "");
         string? value = output is null ? null : ReadField(output, "KILL|");
         if (value is not null && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double moment))
         {
             SeekTo(moment);
-            StatusText.Text = "Jumped to where the streaks are most visible. Use the frame buttons to fine-tune, then Save screenshot.";
+            StatusText.Text = foundText;
         }
         else
         {
-            StatusText.Text = "Couldn't find kill streaks in this clip. Pick the moment yourself.";
+            StatusText.Text = missingText;
         }
     }
 
@@ -183,6 +193,7 @@ public partial class ScreenshotWindow : Window
         _busy = busy;
         SaveButton.IsEnabled = !busy;
         FindKillButton.IsEnabled = !busy;
+        FindDamageButton.IsEnabled = !busy;
         if (busy) StatusText.Text = message;
         Cursor = busy ? Cursors.Wait : null;
     }

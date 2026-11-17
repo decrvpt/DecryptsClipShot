@@ -14,7 +14,7 @@
         </Grid.RowDefinitions>
         <StackPanel>
             <TextBlock x:Name="TitleText" Text="Take a screenshot" FontSize="19" FontWeight="Bold"/>
-            <TextBlock Text="Move to the moment you want, then click Save screenshot. Find kill moment jumps to where the kill streaks are most visible. Arrow keys move one frame."
+            <TextBlock Text="Move to the moment you want, then click Save screenshot. Find kill streaks and Find damage number jump to where each is most visible. Arrow keys move one frame."
                        Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,4,0,12" TextWrapping="Wrap"/>
         </StackPanel>
         <Border Grid.Row="1" Background="Black" CornerRadius="10">
@@ -31,7 +31,8 @@
             <Button x:Name="PlayButton" Content="Play" Style="{StaticResource SecondaryButton}" MinWidth="80" Click="Play_Click"/>
             <Button Content="◀ Frame" Style="{StaticResource SecondaryButton}" Margin="10,0,0,0" Click="PreviousFrame_Click" ToolTip="One frame back (Left arrow)"/>
             <Button Content="Frame ▶" Style="{StaticResource SecondaryButton}" Margin="10,0,0,0" Click="NextFrame_Click" ToolTip="One frame forward (Right arrow)"/>
-            <Button x:Name="FindKillButton" Content="Find kill moment" Style="{StaticResource SecondaryButton}" Margin="10,0,0,0" Click="FindKill_Click"/>
+            <Button x:Name="FindKillButton" Content="Find kill streaks" Style="{StaticResource SecondaryButton}" Margin="10,0,0,0" Click="FindKill_Click"/>
+            <Button x:Name="FindDamageButton" Content="Find damage number" Style="{StaticResource SecondaryButton}" Margin="10,0,0,0" Click="FindDamage_Click"/>
         </StackPanel>
         <Grid Grid.Row="4" Margin="0,14,0,0">
             <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>

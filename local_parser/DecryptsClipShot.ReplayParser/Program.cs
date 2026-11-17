@@ -40,6 +40,15 @@ internal static class Program
         public string ShotLabel { get; init; } = "";
         public string KillerPlatform { get; init; } = "";
         public string VictimPlatform { get; init; } = "";
+        /// <summary>True when the final kill's weapon has a scope (used to tell scoped/no-scope from video).</summary>
+        public bool WeaponHasScope { get; init; }
+        /// <summary>True when the final kill was on an AI bot (bots don't get the kill streak effect).</summary>
+        public bool VictimIsBot { get; init; }
+        /// <summary>
+        /// How many seconds before the end of the replay the final kill happened, or -1 if
+        /// unknown. The app uses it to find the kill inside the saved clip for its screenshot.
+        /// </summary>
+        public double KillSecondsBeforeEnd { get; init; } = -1;
         public KillDetails? Furthest { get; init; }
     }
 
@@ -74,7 +83,11 @@ internal static class Program
             var reader = new ReplayReader(null, ParseMode.Full);
             FortniteReplay replay = reader.ReadReplay(replayPath);
             LocalReplayResult result = Analyze(replay, reader);
-            result = result with { Furthest = FindFurthestKill(replay) };
+            result = result with
+            {
+                KillSecondsBeforeEnd = LastEliminationSecondsBeforeEnd(replay),
+                Furthest = FindFurthestKill(replay)
+            };
             Directory.CreateDirectory(Path.GetDirectoryName(resultPath)!);
             File.WriteAllText(resultPath, JsonSerializer.Serialize(result,
                 new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true }));
@@ -197,8 +210,45 @@ internal static class Program
             WeaponKey = weapon.TagKey ?? "",
             ShotLabel = ShotLabel(sniper, weapon.HasScope, owner, finalKill, tags),
             KillerPlatform = killerPlatform,
-            VictimPlatform = victimPlatform
+            VictimPlatform = victimPlatform,
+            WeaponHasScope = sniper && weapon.HasScope,
+            VictimIsBot = IsBot(victimData) || ReadMember(finalKill, "PlayerIsBot") is true
         };
+    }
+
+    private static bool IsBot(PlayerData? player) =>
+        player is not null && ReadMember(player, "IsBot") is true;
+
+    // The replay's own clock (milliseconds from the start of the recording) for the last
+    // elimination event, compared with the replay's length. Read by reflection so a reader
+    // version without these members just reports "unknown" (-1).
+    private static double LastEliminationSecondsBeforeEnd(FortniteReplay replay)
+    {
+        try
+        {
+            object? info = ReadMember(replay, "Info");
+            object? lengthValue = info is null ? null : ReadMember(info, "LengthInMs");
+            if (lengthValue is null) return -1;
+            double length = Convert.ToDouble(lengthValue);
+            if (ReadMember(replay, "Eliminations") is not IEnumerable eliminations) return -1;
+            double last = -1;
+            foreach (object? elimination in eliminations)
+            {
+                if (elimination is null) continue;
+                object? eventInfo = ReadMember(elimination, "Info");
+                object? start = eventInfo is null ? null : ReadMember(eventInfo, "StartTime");
+                if (start is null) continue;
+                double time = Convert.ToDouble(start);
+                if (time > last) last = time;
+            }
+            if (last < 0 || length <= 0 || last > length) return -1;
+            double seconds = (length - last) / 1000.0;
+            return seconds <= 900 ? Math.Round(seconds, 3) : -1;
+        }
+        catch
+        {
+            return -1;
+        }
     }
 
     // Longest measured elimination in the whole match, by any player.

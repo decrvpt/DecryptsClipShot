@@ -14,6 +14,7 @@
 #include <tlhelp32.h>
 #include <direct.h>
 #include <stdio.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -152,6 +153,10 @@ typedef struct {
     char victim[128];
     char weapon[128];
     char shot_type[64];
+    char shot_label[64];
+    int weapon_has_scope;
+    int victim_is_bot;
+    double kill_before_end; /* seconds before the replay ended, or -1 */
     char reason[512];
 } MatchResult;
 
@@ -1248,9 +1253,29 @@ typedef struct {
     FILETIME observed[MAX_SEGMENTS];
 } GrowthProbe;
 
+/* The size in a folder listing (GetFileAttributesEx) can lag behind for a
+   file another program is still writing, so live growth went unseen. Asking
+   an open handle returns the real current size. */
+static int live_file_size(const wchar_t *path, ULONGLONG *size, FILETIME *written)
+{
+    LARGE_INTEGER value;
+    HANDLE file = CreateFileW(path, FILE_READ_ATTRIBUTES,
+                              FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                              NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    int ok;
+    if (file == INVALID_HANDLE_VALUE) return 0;
+    ok = GetFileSizeEx(file, &value);
+    if (ok && written) GetFileTime(file, NULL, NULL, written);
+    CloseHandle(file);
+    if (ok) *size = (ULONGLONG)value.QuadPart;
+    return ok;
+}
+
 static ULONGLONG current_file_size(const Segment *segment, ULONGLONG fallback)
 {
+    ULONGLONG size;
     WIN32_FILE_ATTRIBUTE_DATA data;
+    if (live_file_size(segment->path, &size, NULL)) return size;
     if (!GetFileAttributesExW(segment->path, GetFileExInfoStandard, &data)) return fallback;
     return ((ULONGLONG)data.nFileSizeHigh << 32) | data.nFileSizeLow;
 }
@@ -1264,14 +1289,18 @@ static void growth_before(GrowthProbe *probe)
 static void growth_after(GrowthProbe *probe)
 {
     for (size_t i = 0; i < probe->count; i++) {
-        WIN32_FILE_ATTRIBUTE_DATA data;
         ULONGLONG after;
-        if (!GetFileAttributesExW(probe->items[i].path, GetFileExInfoStandard, &data))
-            continue;
-        after = ((ULONGLONG)data.nFileSizeHigh << 32) | data.nFileSizeLow;
+        FILETIME written;
+        if (!live_file_size(probe->items[i].path, &after, &written)) {
+            WIN32_FILE_ATTRIBUTE_DATA data;
+            if (!GetFileAttributesExW(probe->items[i].path, GetFileExInfoStandard, &data))
+                continue;
+            after = ((ULONGLONG)data.nFileSizeHigh << 32) | data.nFileSizeLow;
+            written = data.ftLastWriteTime;
+        }
         if (after != probe->before[i]) {
             probe->changes[i]++;
-            probe->observed[i] = data.ftLastWriteTime;
+            probe->observed[i] = written;
         }
     }
 }
@@ -1705,8 +1734,18 @@ static int save_clip(const AppConfig *config, Recorder *recorder, const wchar_t 
     if (running) {
         detect_active_segments(video, video_count, &video_active,
                                audio, audio_count, &audio_active);
-        if (video_active == SIZE_MAX)
-            wprintf(L"Could not observe live video segment growth; using file times.\n");
+        /* If growth still couldn't be seen, the newest file is the one being
+           written (FFmpeg always writes the most recently created piece). Treat
+           it as live so the sound/video end times are still measured instead
+           of assumed equal. */
+        if (video_active == SIZE_MAX && video_count > 0) {
+            video_active = video_count - 1;
+            wprintf(L"Live video piece not seen growing; using the newest one.\n");
+        }
+        if (audio_active == SIZE_MAX && audio_count > 0) {
+            audio_active = audio_count - 1;
+            wprintf(L"Live audio piece not seen growing; using the newest one.\n");
+        }
     }
     video_count = order_ring(video, video_count, video_active, video_wrap_count(config));
     audio_count = order_ring(audio, audio_count, audio_active, audio_wrap_count(config));
@@ -2143,6 +2182,13 @@ static int parse_local_replay_result(const wchar_t *result_path, MatchResult *re
     json_string(json, "victim", result->victim, sizeof(result->victim));
     json_string(json, "weapon", result->weapon, sizeof(result->weapon));
     json_string(json, "shotType", result->shot_type, sizeof(result->shot_type));
+    /* Top-level values come before the nested "furthest" kill in the file,
+       so the first match is the final kill's. */
+    json_string(json, "shotLabel", result->shot_label, sizeof(result->shot_label));
+    json_bool(json, "weaponHasScope", &result->weapon_has_scope);
+    json_bool(json, "victimIsBot", &result->victim_is_bot);
+    result->kill_before_end = -1.0;
+    json_double(json, "killSecondsBeforeEnd", &result->kill_before_end);
     json_string(json, "reason", result->reason, sizeof(result->reason));
     free(json);
     return 1;
@@ -2294,28 +2340,91 @@ static double kill_effect_score(const unsigned char *rgb, ShotScratch *scratch)
     return linear + 0.25 * raw;
 }
 
+/* Damage numbers: bold digits with a darker edge that pop up near the middle
+   of the screen. Shield hits (including headshots on shields) are blue/cyan,
+   headshots without shield yellow, body hits white (some creative maps also
+   show white when cracking shields). White pixels are ignored when they
+   belong to a long straight line, so kill streaks aren't mistaken for
+   numbers, and the top of the screen is skipped so the Victory Royale banner
+   doesn't count. Uses scratch->lum from kill_effect_score() on the same frame. */
+static double damage_number_score(const unsigned char *rgb, const ShotScratch *scratch)
+{
+    static const int directions[8][2] = {
+        {0, 1}, {1, 0}, {1, 1}, {1, -1}, {1, 2}, {2, 1}, {1, -2}, {2, -1}
+    };
+    double score = 0.0;
+    int x0 = SHOT_W * 20 / 100, x1 = SHOT_W * 80 / 100;
+    int y0 = SHOT_H * 20 / 100, y1 = SHOT_H * 80 / 100;
+    for (int y = y0; y < y1; y++) {
+        for (int x = x0; x < x1; x++) {
+            int i = y * SHOT_W + x;
+            const unsigned char *p = rgb + i * 3;
+            int lum = scratch->lum[i], low = 255;
+            int cyan, yellow, white;
+            if (lum <= 170) continue;
+            for (int dy = -2; dy <= 2; dy++)
+                for (int dx = -2; dx <= 2; dx++) {
+                    int v = scratch->lum[(y + dy) * SHOT_W + (x + dx)];
+                    if (v < low) low = v;
+                }
+            if (low >= lum - 90) continue;
+            cyan = p[1] > 200 && p[2] > 200 && p[0] < 170;
+            yellow = p[0] > 220 && p[1] > 190 && p[2] < 120;
+            white = p[0] > 225 && p[1] > 225 && p[2] > 225;
+            if (cyan || yellow) {
+                score += 1.0;
+            } else if (white) {
+                int longest = 0;
+                for (int d = 0; d < 8 && longest < 9; d++) {
+                    int run = 0;
+                    for (int k = -5; k <= 5; k++) {
+                        int yy = y + k * directions[d][0], xx = x + k * directions[d][1];
+                        if (yy < 0 || yy >= SHOT_H || xx < 0 || xx >= SHOT_W) continue;
+                        run += scratch->lum[yy * SHOT_W + xx] > 200;
+                    }
+                    if (run > longest) longest = run;
+                }
+                if (longest < 9) score += 1.0;
+            }
+        }
+    }
+    return score;
+}
+
 static int compare_doubles(const void *left, const void *right)
 {
     double a = *(const double *)left, b = *(const double *)right;
     return a < b ? -1 : a > b;
 }
 
-/* Scores `length` seconds of `video` starting at `from`, sampled at `fps`.
-   Returns the time of the best frame plus its score and the window's median
-   score (how the clip normally looks). */
-static int scan_kill_effects(const AppConfig *config, const wchar_t *video, const wchar_t *work,
-                             double from, double length, double fps,
-                             double *best_time, double *best_score, double *median_score)
+typedef struct {
+    double streak_time, streak_best, streak_median;
+    double damage_time, damage_best, damage_median;
+} FrameScan;
+
+static double median_of(double *values, size_t count)
+{
+    qsort(values, count, sizeof(double), compare_doubles);
+    return values[count / 2];
+}
+
+/* Scores `length` seconds of `video` starting at `from`, sampled at `fps`,
+   for both kill streaks and damage numbers. For each it returns the best
+   frame's time and score, and the window's median (how the clip normally
+   looks), since strength differs from player to player. */
+static int scan_frames(const AppConfig *config, const wchar_t *video, const wchar_t *work,
+                       double from, double length, double fps, FrameScan *scan)
 {
     wchar_t raw_path[PATH_CAP], log_path[PATH_CAP], command[COMMAND_CAP];
     DWORD exit_code = 1;
     FILE *file = NULL;
     unsigned char *frame = NULL;
-    double *scores = NULL;
+    double *streaks = NULL, *damage = NULL;
     ShotScratch *scratch = NULL;
-    size_t count = 0, best = 0;
+    size_t count = 0, best_streak = 0, best_damage = 0;
     int ok = 0;
 
+    ZeroMemory(scan, sizeof(*scan));
     if (from < 0.0) from = 0.0;
     if (length <= 0.0) return 0;
     swprintf_s(raw_path, ARRAY_COUNT(raw_path), L"%ls\\shot_scan.raw", work);
@@ -2328,30 +2437,48 @@ static int scan_kill_effects(const AppConfig *config, const wchar_t *video, cons
         goto done;
 
     frame = (unsigned char *)malloc(SHOT_FRAME_BYTES);
-    scores = (double *)malloc(SHOT_MAX_FRAMES * sizeof(double));
+    streaks = (double *)malloc(SHOT_MAX_FRAMES * sizeof(double));
+    damage = (double *)malloc(SHOT_MAX_FRAMES * sizeof(double));
     scratch = (ShotScratch *)malloc(sizeof(ShotScratch));
-    if (!frame || !scores || !scratch || _wfopen_s(&file, raw_path, L"rb") != 0 || !file)
+    if (!frame || !streaks || !damage || !scratch ||
+        _wfopen_s(&file, raw_path, L"rb") != 0 || !file)
         goto done;
     while (count < SHOT_MAX_FRAMES && fread(frame, 1, SHOT_FRAME_BYTES, file) == SHOT_FRAME_BYTES) {
-        scores[count] = kill_effect_score(frame, scratch);
-        if (scores[count] > scores[best]) best = count;
+        streaks[count] = kill_effect_score(frame, scratch);
+        damage[count] = damage_number_score(frame, scratch);
+        if (streaks[count] > streaks[best_streak]) best_streak = count;
+        if (damage[count] > damage[best_damage]) best_damage = count;
         count++;
     }
     if (count == 0) goto done;
-    *best_time = from + (double)best / fps;
-    *best_score = scores[best];
-    qsort(scores, count, sizeof(double), compare_doubles);
-    *median_score = scores[count / 2];
+    scan->streak_time = from + (double)best_streak / fps;
+    scan->streak_best = streaks[best_streak];
+    scan->damage_time = from + (double)best_damage / fps;
+    scan->damage_best = damage[best_damage];
+    scan->streak_median = median_of(streaks, count);
+    scan->damage_median = median_of(damage, count);
     ok = 1;
 
 done:
     if (file) fclose(file);
     free(frame);
-    free(scores);
+    free(streaks);
+    free(damage);
     free(scratch);
     DeleteFileW(raw_path);
     DeleteFileW(log_path);
     return ok;
+}
+
+static int streaks_stand_out(const FrameScan *scan)
+{
+    return scan->streak_best >= scan->streak_median * 1.3 + 20.0;
+}
+
+static int damage_stands_out(const FrameScan *scan)
+{
+    return scan->damage_best >= scan->damage_median * 1.5 + 4.0 ||
+           scan->damage_best - scan->damage_median >= 8.0;
 }
 
 /* Finds the frame between `from` and `to` where kill streaks are most
@@ -2361,18 +2488,31 @@ done:
 static int find_kill_moment(const AppConfig *config, const wchar_t *video, const wchar_t *work,
                             double from, double to, double *moment, int *stands_out)
 {
-    double coarse_time, coarse_score, median, fine_time, fine_score, fine_median;
+    FrameScan coarse, fine;
     if (from < 0.0) from = 0.0;
     if (to - from < 0.2) return 0;
-    if (!scan_kill_effects(config, video, work, from, to - from, 10.0,
-                           &coarse_time, &coarse_score, &median))
-        return 0;
-    *moment = coarse_time;
-    if (stands_out) *stands_out = coarse_score >= median * 1.3 + 20.0;
-    if (scan_kill_effects(config, video, work, coarse_time - 0.15, 0.3, 60.0,
-                          &fine_time, &fine_score, &fine_median) &&
-        fine_score >= coarse_score)
-        *moment = fine_time;
+    if (!scan_frames(config, video, work, from, to - from, 10.0, &coarse)) return 0;
+    *moment = coarse.streak_time;
+    if (stands_out) *stands_out = streaks_stand_out(&coarse);
+    if (scan_frames(config, video, work, coarse.streak_time - 0.15, 0.3, 60.0, &fine) &&
+        fine.streak_best >= coarse.streak_best)
+        *moment = fine.streak_time;
+    return 1;
+}
+
+/* Same idea for damage numbers: where the number is clearest. */
+static int find_damage_moment(const AppConfig *config, const wchar_t *video, const wchar_t *work,
+                              double from, double to, double *moment, int *stands_out)
+{
+    FrameScan coarse, fine;
+    if (from < 0.0) from = 0.0;
+    if (to - from < 0.2) return 0;
+    if (!scan_frames(config, video, work, from, to - from, 20.0, &coarse)) return 0;
+    *moment = coarse.damage_time;
+    if (stands_out) *stands_out = damage_stands_out(&coarse);
+    if (scan_frames(config, video, work, coarse.damage_time - 0.1, 0.2, 60.0, &fine) &&
+        fine.damage_best >= coarse.damage_best)
+        *moment = fine.damage_time;
     return 1;
 }
 
@@ -2391,30 +2531,180 @@ static int export_frame(const AppConfig *config, const wchar_t *video, const wch
     return GetFileAttributesW(png_path) != INVALID_FILE_ATTRIBUTES;
 }
 
+/* A sniper scope blacks out the screen around a circle: the left and right
+   edges at mid-height and all four corners go black while the middle shows
+   the game. A no-scope keeps the whole screen visible. */
+static int is_scope_frame(const unsigned char *rgb)
+{
+    int edge_dark = 0, edge_total = 0, middle_dark = 0, middle_total = 0;
+    for (int y = 0; y < SHOT_H; y++) {
+        for (int x = 0; x < SHOT_W; x++) {
+            const unsigned char *p = rgb + (y * SHOT_W + x) * 3;
+            int lum = (p[0] * 77 + p[1] * 150 + p[2] * 29) >> 8;
+            int side = x < SHOT_W * 8 / 100 || x >= SHOT_W * 92 / 100;
+            int corner = (x < SHOT_W * 12 / 100 || x >= SHOT_W * 88 / 100) &&
+                         (y < SHOT_H * 15 / 100 || y >= SHOT_H * 85 / 100);
+            int middle = x >= SHOT_W * 40 / 100 && x < SHOT_W * 60 / 100 &&
+                         y >= SHOT_H * 35 / 100 && y < SHOT_H * 65 / 100;
+            if (side || corner) {
+                edge_total++;
+                if (lum < 28) edge_dark++;
+            }
+            if (middle) {
+                middle_total++;
+                if (lum < 28) middle_dark++;
+            }
+        }
+    }
+    return edge_total > 0 && middle_total > 0 &&
+           edge_dark * 100 >= edge_total * 90 &&
+           middle_dark * 100 < middle_total * 50;
+}
+
+/* Counts scope-view frames between `from` and `to` (sampled at 30 FPS). */
+static int count_scope_frames(const AppConfig *config, const wchar_t *video, const wchar_t *work,
+                              double from, double to, int *scoped, int *total)
+{
+    wchar_t raw_path[PATH_CAP], log_path[PATH_CAP], command[COMMAND_CAP];
+    DWORD exit_code = 1;
+    FILE *file = NULL;
+    unsigned char *frame;
+    *scoped = 0;
+    *total = 0;
+    if (from < 0.0) from = 0.0;
+    if (to - from < 0.05) return 0;
+    swprintf_s(raw_path, ARRAY_COUNT(raw_path), L"%ls\\scope_scan.raw", work);
+    swprintf_s(log_path, ARRAY_COUNT(log_path), L"%ls\\scope_scan.log", work);
+    swprintf_s(command, ARRAY_COUNT(command),
+               L"\"%ls\" -hide_banner -loglevel error -y -ss %.3f -i \"%ls\" -t %.3f -an "
+               L"-vf \"fps=30,scale=%d:%d:flags=area,format=rgb24\" -f rawvideo \"%ls\"",
+               config->ffmpeg_path, from, video, to - from, SHOT_W, SHOT_H, raw_path);
+    if (!run_process_wait_logged(command, work, 60000, &exit_code, log_path) || exit_code != 0) {
+        DeleteFileW(raw_path);
+        return 0;
+    }
+    frame = (unsigned char *)malloc(SHOT_FRAME_BYTES);
+    if (frame && _wfopen_s(&file, raw_path, L"rb") == 0 && file) {
+        while (fread(frame, 1, SHOT_FRAME_BYTES, file) == SHOT_FRAME_BYTES) {
+            (*total)++;
+            *scoped += is_scope_frame(frame);
+        }
+        fclose(file);
+    }
+    free(frame);
+    DeleteFileW(raw_path);
+    DeleteFileW(log_path);
+    return *total > 0;
+}
+
 /* After a trickshot is confirmed: save the frame where the final kill's
    streaks are most visible to the screenshots folder. The final
    kill is shortly before the match ended, and the clip ends
    post_match_seconds after that, so only the clip's tail is searched. */
-static void save_trickshot_screenshot(const AppConfig *config, const wchar_t *clip)
+typedef struct {
+    int streaks_found;    /* kill streaks located */
+    double streak_moment; /* seconds into the clip */
+    int damage_found;     /* damage number located */
+    double damage_moment;
+    wchar_t shot[32];     /* L"scoped", L"no-scope" or empty */
+} TrickshotFrame;
+
+/* Finds the final kill inside a trickshot clip. The clip ends
+   post_match_seconds after the replay stopped growing, and the replay says
+   how long before its end the kill happened, so only a few seconds around
+   that point are searched. That keeps victory, lobby and loading screens out.
+
+   Two moments are found, because the streaks and the damage number are
+   rarely on screen at their best together: where the streaks are strongest
+   (skipped for a bot, which gets no streaks) and where the damage number is
+   clearest. For scoped snipers the frames just before the kill are checked
+   for the scope view. */
+static void analyze_trickshot_clip(const AppConfig *config, const wchar_t *clip,
+                                   const MatchResult *result, TrickshotFrame *out)
+{
+    double duration = 0.0, end_of_match, from, to, kill_time = -1.0;
+    int stands_out = 0, scoped = 0, total = 0, estimate_known = result->kill_before_end >= 0.0;
+    ZeroMemory(out, sizeof(*out));
+    if (!probe_duration(config, config->work_dir, clip, &duration)) return;
+    end_of_match = duration - config->post_match_seconds;
+    if (estimate_known) {
+        double estimate = end_of_match - result->kill_before_end;
+        from = estimate - 4.0;
+        to = estimate + 4.0;
+    } else {
+        from = end_of_match - 30.0;
+        to = end_of_match + 1.0;
+    }
+    if (to > end_of_match + 1.0) to = end_of_match + 1.0;
+    if (to > duration) to = duration;
+    if (from < 0.0) from = 0.0;
+    if (to - from < 0.5) {
+        wprintf(L"The final kill happened before this clip starts, so no screenshot was taken.\n");
+        return;
+    }
+
+    if (!result->victim_is_bot &&
+        find_kill_moment(config, clip, config->work_dir, from, to, &out->streak_moment, &stands_out) &&
+        stands_out) {
+        out->streaks_found = 1;
+        kill_time = out->streak_moment;
+        /* The number pops up at the hit, right around the streaks. */
+        from = kill_time - 1.0;
+        to = kill_time + 1.2;
+    }
+    if (find_damage_moment(config, clip, config->work_dir, from, to, &out->damage_moment, &stands_out)) {
+        if (stands_out) {
+            out->damage_found = 1;
+        } else if (out->streaks_found) {
+            /* The number didn't clearly stand out (e.g. a white number on
+               snow). It pops up at the hit, so use just after the kill. */
+            out->damage_moment = out->streak_moment + 0.1;
+            out->damage_found = 1;
+        } else if (estimate_known) {
+            out->damage_found = 1;
+        }
+        if (out->damage_found && kill_time < 0.0) kill_time = out->damage_moment;
+    }
+
+    if (kill_time >= 0.0 && result->sniper && result->weapon_has_scope &&
+        count_scope_frames(config, clip, config->work_dir, kill_time - 0.5, kill_time - 0.02,
+                           &scoped, &total)) {
+        wcscpy_s(out->shot, ARRAY_COUNT(out->shot), scoped >= 2 ? L"scoped" : L"no-scope");
+    }
+}
+
+static void save_trickshot_screenshot(const AppConfig *config, const wchar_t *clip,
+                                      const TrickshotFrame *frame)
 {
     wchar_t png[PATH_CAP], name[PATH_CAP];
     const wchar_t *slash;
     wchar_t *dot;
-    double duration = 0.0, moment = 0.0, from;
-    if (!probe_duration(config, config->work_dir, clip, &duration)) return;
-    /* Same name as the clip (e.g. 184m_2026-09-01_19-47-36.png), but in the
-       screenshots folder so clips and pictures stay separate. */
+    int saved = 0;
+    /* Same name as the clip plus what the picture shows, e.g.
+       184m_no-scope_2026-09-01_19-47-36_streaks.png, in the screenshots
+       folder so clips and pictures stay separate. */
     slash = wcsrchr(clip, L'\\');
     wcscpy_s(name, ARRAY_COUNT(name), slash ? slash + 1 : clip);
     dot = wcsrchr(name, L'.');
     if (dot) *dot = L'\0';
     ensure_directory(config->screenshots_dir);
-    swprintf_s(png, ARRAY_COUNT(png), L"%ls\\%ls.png", config->screenshots_dir, name);
-    from = duration - config->post_match_seconds - 15.0;
-    if (!find_kill_moment(config, clip, config->work_dir, from, duration, &moment, NULL))
-        return;
-    if (export_frame(config, clip, config->work_dir, moment, png))
-        wprintf(L"Saved screenshot: %ls\n", png);
+    if (frame->streaks_found) {
+        swprintf_s(png, ARRAY_COUNT(png), L"%ls\\%ls_streaks.png", config->screenshots_dir, name);
+        if (export_frame(config, clip, config->work_dir, frame->streak_moment, png)) {
+            wprintf(L"Saved screenshot: %ls\n", png);
+            saved++;
+        }
+    }
+    if (frame->damage_found &&
+        (!frame->streaks_found || fabs(frame->damage_moment - frame->streak_moment) > 0.02)) {
+        swprintf_s(png, ARRAY_COUNT(png), L"%ls\\%ls_damage.png", config->screenshots_dir, name);
+        if (export_frame(config, clip, config->work_dir, frame->damage_moment, png)) {
+            wprintf(L"Saved screenshot: %ls\n", png);
+            saved++;
+        }
+    }
+    if (!saved)
+        wprintf(L"Couldn't find the kill in this clip for a screenshot. Use Screenshot in My Clips to pick it yourself.\n");
 }
 
 /* In-game screenshot key. Copies the video piece being recorded right now
@@ -2516,18 +2806,36 @@ static void classify_pending_clip(const AppConfig *config, const wchar_t *clip,
     if (result.placement == 1 && result.has_kill && result.trickshot_weapon &&
         result.distance_uu > 0.0) {
         double meters = result.distance_uu / 100.0;
+        TrickshotFrame frame;
+        wchar_t weapon[128], name_label[40] = L"";
         category = L"Trickshots";
-        shot_label = _stricmp(result.shot_type, "NoScope") == 0 ? L"no-scope"
-                   : result.sniper ? L"sniper"
-                   : L"heavy-ammo";
+        /* The replay's aim data decides scoped/no-scope when it has it;
+           otherwise the video is checked for the scope view. */
+        analyze_trickshot_clip(config, clip, &result, &frame);
+        if (_stricmp(result.shot_type, "NoScope") == 0 || _stricmp(result.shot_label, "No-scope") == 0)
+            shot_label = L"no-scope";
+        else if (_stricmp(result.shot_label, "Scoped") == 0)
+            shot_label = L"scoped";
+        else if (_strnicmp(result.shot_label, "Aimed", 5) == 0)
+            shot_label = L"aimed";
+        else if (frame.shot[0])
+            shot_label = frame.shot;
+        else
+            shot_label = L"";
+        if (MultiByteToWideChar(CP_UTF8, 0, result.weapon, -1, weapon, ARRAY_COUNT(weapon)) <= 1)
+            wcscpy_s(weapon, ARRAY_COUNT(weapon), result.sniper ? L"Sniper" : L"Heavy-ammo weapon");
+        if (shot_label[0]) swprintf_s(name_label, ARRAY_COUNT(name_label), L"%ls_", shot_label);
         join_path(destination_dir, ARRAY_COUNT(destination_dir), config->clips_dir, category);
         ensure_directory(destination_dir);
         make_timestamp(timestamp, ARRAY_COUNT(timestamp));
-        swprintf_s(destination, ARRAY_COUNT(destination), L"%ls\\%.0fm_%ls.mp4",
-                   destination_dir, meters, timestamp);
+        swprintf_s(destination, ARRAY_COUNT(destination), L"%ls\\%.0fm_%ls%ls.mp4",
+                   destination_dir, meters, name_label, timestamp);
         if (MoveFileExW(clip, destination, MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING)) {
-            wprintf(L"Qualified trickshot (%ls final kill, %.0fm): %ls\n", shot_label, meters, destination);
-            if (config->auto_screenshot) save_trickshot_screenshot(config, destination);
+            if (shot_label[0])
+                wprintf(L"Qualified trickshot (%ls, %ls, %.0fm): %ls\n", weapon, shot_label, meters, destination);
+            else
+                wprintf(L"Qualified trickshot (%ls, %.0fm): %ls\n", weapon, meters, destination);
+            if (config->auto_screenshot) save_trickshot_screenshot(config, destination, &frame);
         } else
             print_last_error(L"Could not move qualified clip");
     } else if (config->keep_rejected_clips) {
@@ -2558,6 +2866,15 @@ static int run_command_line(int argc, wchar_t **argv)
     if (argc >= 5 && wcscmp(argv[1], L"--find-kill") == 0) {
         double moment = 0.0;
         if (find_kill_moment(&config, argv[2], work, _wtof(argv[3]), _wtof(argv[4]), &moment, NULL)) {
+            wprintf(L"KILL|%.3f\n", moment);
+            return 0;
+        }
+        wprintf(L"KILL|none\n");
+        return 1;
+    }
+    if (argc >= 5 && wcscmp(argv[1], L"--find-damage") == 0) {
+        double moment = 0.0;
+        if (find_damage_moment(&config, argv[2], work, _wtof(argv[3]), _wtof(argv[4]), &moment, NULL)) {
             wprintf(L"KILL|%.3f\n", moment);
             return 0;
         }

@@ -41,9 +41,9 @@ Double-click a clip to watch it. Select one and click **Rename** to rename it. Y
 
 Screenshots are saved in your **Pictures** folder, under **Decrypt's ClipShot**, separate from your clips. The **Screenshots** page in the app shows them.
 
-- **Trickshots** get a screenshot automatically, taken at the moment the final kill's streaks are most visible.
+- **Trickshots** get two screenshots automatically: one where the final kill's streaks are strongest, and one where the damage number is clearest. Kills on bots only get the damage-number one, because bots don't get kill streaks.
 - **In game**, press **F10** to save the moment. If you press it right after a kill, ClipShot picks the frame where the kill streaks were most visible.
-- **From a clip**: in My Clips, select a clip and click **Screenshot**. Move to the moment you want (the arrow keys step one frame), or click **Find kill moment**, then **Save screenshot**.
+- **From a clip**: in My Clips, select a clip and click **Screenshot**. Move to the moment you want (the arrow keys step one frame), or click **Find kill streaks** or **Find damage number**, then **Save screenshot**.
 
 ## Meter Checker
 

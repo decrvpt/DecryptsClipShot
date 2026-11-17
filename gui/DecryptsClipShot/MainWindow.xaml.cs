@@ -651,7 +651,12 @@ public partial class MainWindow : Window
         static bool Starts(string text, string part) => text.StartsWith(part, StringComparison.OrdinalIgnoreCase);
 
         if (Starts(line, "Saved clip:")) return $"Clip saved: {Path.GetFileName(line[11..].Trim())}";
-        if (Starts(line, "Saved screenshot:")) return "Trickshot screenshot saved";
+        if (Starts(line, "Saved screenshot:"))
+            return line.EndsWith("_damage.png", StringComparison.OrdinalIgnoreCase)
+                ? "Trickshot screenshot saved (damage number)"
+                : "Trickshot screenshot saved (kill streaks)";
+        if (Has(line, "final kill happened before this clip starts") || Has(line, "Couldn't find the kill in this clip"))
+            return "Couldn't find the kill for a screenshot. Open the clip in My Clips and click Screenshot to pick it yourself.";
         if (Starts(line, "Saved recording:") || Starts(line, "Long recording started")) return null; // shown by the LONG| lines
         if (Has(line, "Qualified trickshot"))
         {
@@ -865,7 +870,14 @@ public partial class MainWindow : Window
                     double.TryParse(token[..^1], NumberStyles.Float, CultureInfo.InvariantCulture,
                         out double distance))
                 {
-                    return $"{distance:0.#} m";
+                    string shot = tokens[1].ToLowerInvariant() switch
+                    {
+                        "no-scope" => "  •  No-scope",
+                        "scoped" => "  •  Scoped",
+                        "aimed" => "  •  Iron sights",
+                        _ => ""
+                    };
+                    return $"{distance:0.#} m{shot}";
                 }
             }
             return baseName.Replace('_', ' ');

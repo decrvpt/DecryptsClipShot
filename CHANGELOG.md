@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.6
+
+- **Two trickshot screenshots:** one where the kill streaks are strongest, and one where the damage number is clearest (they're rarely at their best in the same frame). Kills on bots get only the damage-number picture, since bots don't get kill streaks. Damage numbers are recognized in every color: blue (shield, including headshots on shields), yellow (headshot) and white (health).
+- Fixed trickshot screenshots that showed a loading screen. ClipShot now uses the replay to find exactly when the final kill happened and only looks there, instead of searching the end of the clip (which can be the lobby or a loading screen).
+- Trickshots say **Scoped** or **No-scope** more often. When the replay doesn't record your aim, ClipShot checks the clip itself for the sniper scope view right before the kill. It shows in the trickshot's title and file name, for example "50m_no-scope_…".
+- Fixed sound and video drifting out of sync in some clips. ClipShot couldn't always tell which recording file was still being written, and then skipped its sync correction.
+- Clip viewer: new **Find damage number** button next to **Find kill streaks**.
+
 ## 1.0.5
 
 - **Trickshot screenshots.** When a trickshot is saved, ClipShot also saves a picture of the final kill at the moment the kill streaks are most visible (weak or strong streaks, it picks that clip's best frame). Turn it off in Settings.
