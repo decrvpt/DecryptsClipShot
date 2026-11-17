@@ -126,6 +126,11 @@ typedef struct {
     double video_lag_ms;
     int have_video;
     int have_audio;
+    /* Real (now_ms) time at which each recorder's timeline position 0 was
+       captured, learned from the fastest progress report of the session. */
+    double video_origin_ms;
+    double audio_origin_ms;
+    int have_origins;
 } TimingSnapshot;
 
 typedef struct {
@@ -521,6 +526,21 @@ static int progress_read(ProgressClock *clock, double *lag, double *drift)
     return have;
 }
 
+/* Every progress report says "media up to out_time is written" and arrives
+   a little after that media was captured. The earliest-arriving report of
+   the session (relative to its out_time) is the closest to the truth, so
+   started + baseline is a steady estimate of when position 0 was captured.
+   Needs enough reports to have seen a quick one. */
+static int progress_origin(ProgressClock *clock, double *origin)
+{
+    int have;
+    AcquireSRWLockShared(&clock->lock);
+    have = clock->samples >= 50;
+    if (have) *origin = clock->started_ms + clock->baseline_ms;
+    ReleaseSRWLockShared(&clock->lock);
+    return have;
+}
+
 static void timing_snapshot(Recorder *recorder, TimingSnapshot *timing)
 {
     ZeroMemory(timing, sizeof(*timing));
@@ -530,6 +550,9 @@ static void timing_snapshot(Recorder *recorder, TimingSnapshot *timing)
     if (recorder->audio_running)
         timing->have_audio = progress_read(&recorder->audio_clock, NULL,
                                            &timing->audio_drift_ms);
+    timing->have_origins = timing->have_video && timing->have_audio &&
+                           progress_origin(&recorder->video_clock, &timing->video_origin_ms) &&
+                           progress_origin(&recorder->audio_clock, &timing->audio_origin_ms);
 }
 
 static void trim_whitespace(wchar_t *value)
@@ -824,15 +847,19 @@ static int start_audio_segment_recorder(Recorder *recorder, const AppConfig *con
        timestamps + aresample async (min_hard_comp=10) stretched or squeezed
        audio by up to 1% instead of filling gaps, so audio did not keep time. */
     swprintf_s(pattern, ARRAY_COUNT(pattern), L"%ls\\audio_%%03d.mka", config->buffer_dir);
+    /* audio_list.csv records where each finished piece sits on the audio
+       timeline (name,start,end), used to line clips up by timestamps. */
     swprintf_s(command, ARRAY_COUNT(command),
         L"\"%ls\" -hide_banner -loglevel warning -y -nostats "
-        L"-stats_period 1 -progress pipe:1 "
+        L"-stats_period 0.1 -progress pipe:1 "
         L"-thread_queue_size 64 "
         L"-f s16le -ar 48000 -ac 2 -i \"\\\\.\\pipe\\%ls\" "
         L"-map 0:a:0 -c:a pcm_s16le -flush_packets 1 -f segment "
         L"-segment_time %d -segment_wrap %d -segment_format matroska "
+        L"-segment_list \"%ls\\audio_list.csv\" -segment_list_type csv -segment_list_size %d "
         L"-segment_format_options cluster_time_limit=100 -reset_timestamps 1 \"%ls\"",
-        config->ffmpeg_path, pipe_name, AUDIO_SEGMENT_SECONDS, segment_count, pattern);
+        config->ffmpeg_path, pipe_name, AUDIO_SEGMENT_SECONDS, segment_count,
+        config->buffer_dir, segment_count + 2, pattern);
 
     if (!progress_prepare(&recorder->audio_clock, &progress_write))
         wprintf(L"Audio timing telemetry is unavailable (pipe creation failed).\n");
@@ -1036,15 +1063,16 @@ static int recorder_start_backend(Recorder *recorder, const AppConfig *config, i
 
     swprintf_s(command, ARRAY_COUNT(command),
         L"\"%ls\" -hide_banner -loglevel warning -y -nostats "
-        L"-stats_period 1 -progress pipe:1 "
+        L"-stats_period 0.1 -progress pipe:1 "
         L"%ls-map 0:v:0 -an %ls-c:v %ls %ls %ls-bf 0 -g %d "
         L"-force_key_frames \"expr:gte(t,n_forced*%d)\" "
         L"-flush_packets 1 -f segment -segment_time %d -segment_wrap %d "
-        L"-segment_format_options cluster_time_limit=100 "
-        L"-reset_timestamps 1 \"%ls\"",
+        L"-segment_list \"%ls\\video_list.csv\" -segment_list_type csv -segment_list_size %d "
+        L"-segment_format_options cluster_time_limit=100 -reset_timestamps 1 \"%ls\"",
         config->ffmpeg_path, capture_args, video_filter,
         config->video_encoder, config->video_options, thread_limit, keyframe_interval,
-        config->segment_seconds, config->segment_seconds, segment_count, pattern);
+        config->segment_seconds, config->segment_seconds, segment_count,
+        config->buffer_dir, segment_count + 2, pattern);
 
     ZeroMemory(&security, sizeof(security));
     security.nLength = sizeof(security);
@@ -1413,8 +1441,20 @@ static void make_timestamp(wchar_t *out, size_t out_count)
 
 /* Reads a finished media file's duration from FFmpeg's own report
    ("Duration: HH:MM:SS.ss"), so no separate ffprobe.exe is required. */
+static int probe_media(const AppConfig *config, const wchar_t *directory,
+                       const wchar_t *file, double *seconds, double *start);
+
 static int probe_duration(const AppConfig *config, const wchar_t *directory,
                           const wchar_t *file, double *seconds)
+{
+    return probe_media(config, directory, file, seconds, NULL);
+}
+
+/* Duration and first timestamp ("Duration: HH:MM:SS.ss, start: S.ssssss").
+   Pieces of the rolling buffer keep their position in the recording, so
+   "start" says where a piece sits on its recorder's timeline. */
+static int probe_media(const AppConfig *config, const wchar_t *directory,
+                       const wchar_t *file, double *seconds, double *start)
 {
     wchar_t command[COMMAND_CAP];
     wchar_t log_path[PATH_CAP];
@@ -1435,6 +1475,10 @@ static int probe_duration(const AppConfig *config, const wchar_t *directory,
     if (found && sscanf(found + 10, "%d:%d:%lf", &hours, &minutes, &secs) == 3) {
         *seconds = hours * 3600.0 + minutes * 60.0 + secs;
         ok = *seconds > 0.0;
+    }
+    if (start) {
+        const char *at = found ? strstr(found, "start: ") : NULL;
+        ok = ok && at && sscanf(at + 7, "%lf", start) == 1;
     }
     free(text);
     return ok;
@@ -1514,10 +1558,69 @@ static size_t segments_needed(double seconds, int segment_seconds)
    target end is given), aligns audio to the exact video span and writes
    the final MP4 into clips\<category>. Shared by normal clips and long
    recordings. Removes the snapshot folder on success. */
+/* Where the first copied pieces sit on their recorders' timelines. */
+typedef struct {
+    int known;
+    double first_video;
+    double first_audio;
+} PiecePositions;
+
+/* Reads a recorder's piece list (lines "segment_003.mkv,30.000000,40.000000",
+   oldest first) and returns where `piece` starts. The buffer reuses file
+   names, so the newest line for that name counts. A piece still being
+   recorded isn't listed yet (or only under its previous use): it starts
+   where the newest listed piece ended. */
+static int piece_start(const wchar_t *buffer_dir, const wchar_t *list_name,
+                       const wchar_t *piece_path, int was_live, double *start)
+{
+    wchar_t list_path[PATH_CAP];
+    char name[PATH_CAP], *text, *line, *context = NULL;
+    const wchar_t *base = wcsrchr(piece_path, L'\\');
+    double newest_end = -1.0, entry_start = -1.0, entry_end = -1.0;
+    swprintf_s(list_path, ARRAY_COUNT(list_path), L"%ls\\%ls", buffer_dir, list_name);
+    if (WideCharToMultiByte(CP_UTF8, 0, base ? base + 1 : piece_path, -1, name, sizeof(name), NULL, NULL) <= 0)
+        return 0;
+    /* FFmpeg rewrites the list as pieces finish; a read can catch it half
+       written, so try a few times. */
+    for (int attempt = 0; attempt < 3; attempt++) {
+        text = read_entire_file(list_path);
+        if (text) break;
+        Sleep(30);
+    }
+    if (!text) return 0;
+    for (line = strtok_s(text, "\r\n", &context); line; line = strtok_s(NULL, "\r\n", &context)) {
+        char *comma = strchr(line, ',');
+        double a = 0.0, b = 0.0;
+        if (!comma || sscanf(comma + 1, "%lf,%lf", &a, &b) != 2) continue;
+        *comma = '\0';
+        {
+            const char *entry = strrchr(line, '\\');
+            const char *slash = strrchr(line, '/');
+            if (slash && (!entry || slash > entry)) entry = slash;
+            entry = entry ? entry + 1 : line;
+            if (_stricmp(entry, name) == 0) {
+                entry_start = a;
+                entry_end = b;
+            }
+        }
+        if (b > newest_end) newest_end = b;
+    }
+    free(text);
+    if (was_live && (entry_end < 0.0 || entry_end < newest_end - 0.001)) {
+        if (newest_end < 0.0) return 0;
+        *start = newest_end;
+        return 1;
+    }
+    if (entry_start < 0.0) return 0;
+    *start = entry_start;
+    return 1;
+}
+
 static int assemble_clip(const AppConfig *config, const wchar_t *snapshot,
                          size_t video_wanted, size_t audio_wanted,
                          double video_tail_ms, double audio_tail_ms, int tails_known,
                          int running, const TimingSnapshot *timing,
+                         const PiecePositions *positions,
                          double clip_seconds, double target_end_ms, double skip_estimate,
                          const wchar_t *category, const wchar_t *timestamp,
                          wchar_t *saved_path, size_t saved_count)
@@ -1639,13 +1742,38 @@ static int assemble_clip(const AppConfig *config, const wchar_t *snapshot,
     swprintf_s(saved_path, saved_count, L"%ls\\%ls_%ls.mp4", category_dir, category, timestamp);
     if (has_audio) {
         double drift_gap = 0.0, audio_end, audio_start, lead, seek;
+        int by_timestamps = 0;
         wchar_t seek_arg[64] = L"";
-        if (tails_known) {
-            tail_gap = (audio_tail_ms - video_tail_ms) / 1000.0;
-            if (running && timing->have_video && timing->have_audio)
-                drift_gap = (timing->video_drift_ms - timing->audio_drift_ms) / 1000.0;
+
+        /* Preferred: line up by timestamps. `positions` says where the first
+           copied video and audio pieces sit on their recorders' timelines
+           (from the recorders' piece lists), and the session's learned
+           origins turn that into real time. Checked for sanity and skipped
+           otherwise (e.g. right after a recorder restarted). */
+        if (timing->have_origins && positions && positions->known) {
+            double now_v = (now_ms() - timing->video_origin_ms) / 1000.0;
+            double now_a = (now_ms() - timing->audio_origin_ms) / 1000.0;
+            by_timestamps = positions->first_video >= 0.0 && positions->first_audio >= 0.0 &&
+                            (!running || (positions->first_video + joined_seconds <= now_v + 2.0 &&
+                                          positions->first_audio + audio_seconds <= now_a + 2.0));
         }
-        audio_end = audio_seconds - (tail_gap + drift_gap) - skip;
+        if (by_timestamps) {
+            /* Real time of the clip's last video frame, then the audio
+               position recorded at that same moment. The video recorder's
+               quickest report still trails by about one frame of encoding
+               more than the audio's, so its origin is moved back one frame. */
+            double video_origin = timing->video_origin_ms / 1000.0 - 1.0 / config->framerate;
+            double video_end_real = video_origin + positions->first_video + (joined_seconds - skip);
+            audio_end = video_end_real - timing->audio_origin_ms / 1000.0 - positions->first_audio;
+            tail_gap = (audio_seconds - skip - audio_end);
+        } else {
+            if (tails_known) {
+                tail_gap = (audio_tail_ms - video_tail_ms) / 1000.0;
+                if (running && timing->have_video && timing->have_audio)
+                    drift_gap = (timing->video_drift_ms - timing->audio_drift_ms) / 1000.0;
+            }
+            audio_end = audio_seconds - (tail_gap + drift_gap) - skip;
+        }
         audio_start = audio_end - video_seconds - config->av_sync_offset_ms / 1000.0;
         if (audio_end <= 0.05 || audio_start >= audio_seconds - 0.05) {
             wprintf(L"The audio buffer does not overlap this clip; saving video only.\n");
@@ -1661,9 +1789,13 @@ static int assemble_clip(const AppConfig *config, const wchar_t *snapshot,
                        L"-t %.3f -movflags +faststart final.mp4",
                        config->ffmpeg_path, video_file, seek_arg,
                        (long long)(lead * 48000.0 + 0.5), video_seconds);
-            wprintf(L"Clip alignment: %.2f s of video; audio placed %+.0f ms from buffer tail (copy gap %+.0f ms, encoder drift %+.0f ms)%ls.\n",
-                    video_seconds, (tail_gap + drift_gap) * 1000.0, tail_gap * 1000.0,
-                    drift_gap * 1000.0, tails_known ? L"" : L", tails assumed equal");
+            if (by_timestamps)
+                wprintf(L"Clip alignment: %.2f s of video; audio lined up by timestamps (%+.0f ms from buffer tail).\n",
+                        video_seconds, tail_gap * 1000.0);
+            else
+                wprintf(L"Clip alignment: %.2f s of video; audio placed %+.0f ms from buffer tail (copy gap %+.0f ms, encoder drift %+.0f ms)%ls.\n",
+                        video_seconds, (tail_gap + drift_gap) * 1000.0, tail_gap * 1000.0,
+                        drift_gap * 1000.0, tails_known ? L"" : L", tails assumed equal");
         }
     }
     if (!has_audio) {
@@ -1833,12 +1965,24 @@ static int save_clip(const AppConfig *config, Recorder *recorder, const wchar_t 
             break;
         }
     }
-    free(video);
-    free(audio);
-    return assemble_clip(config, snapshot, video_wanted, audio_wanted,
-                         video_tail_ms, audio_tail_ms, tails_known, running, &timing,
-                         config->clip_seconds, target_end_ms, skip_estimate,
-                         category, timestamp, saved_path, saved_count);
+    {
+        PiecePositions positions;
+        ZeroMemory(&positions, sizeof(positions));
+        if (audio_wanted > 0)
+            positions.known =
+                piece_start(config->buffer_dir, L"video_list.csv",
+                            video[video_count - video_wanted].path,
+                            video_live && video_wanted == 1, &positions.first_video) &&
+                piece_start(config->buffer_dir, L"audio_list.csv",
+                            audio[audio_count - audio_wanted].path,
+                            audio_live && audio_wanted == 1, &positions.first_audio);
+        free(video);
+        free(audio);
+        return assemble_clip(config, snapshot, video_wanted, audio_wanted,
+                             video_tail_ms, audio_tail_ms, tails_known, running, &timing,
+                             &positions, config->clip_seconds, target_end_ms, skip_estimate,
+                             category, timestamp, saved_path, saved_count);
+    }
 }
 
 
@@ -1861,6 +2005,12 @@ typedef struct {
     FILETIME last_video;
     FILETIME last_audio;
     ULONGLONG last_collect;
+    /* Timeline positions of the first video/audio piece, read when copied
+       (the recorders' piece lists only keep recent pieces). */
+    int have_first_video;
+    int have_first_audio;
+    double first_video;
+    double first_audio;
 } LongRecording;
 
 /* Copies buffer files of one kind that finished after the recording started
@@ -1882,6 +2032,14 @@ static void long_collect_kind(const AppConfig *config, LongRecording *lr, int vi
         if (live && !include_live) break;
         if (CompareFileTime(&segments[i].modified, &lr->start_time) <= 0) continue;
         if (CompareFileTime(&segments[i].modified, last) <= 0) continue;
+        if (*parts == 0) {
+            if (video)
+                lr->have_first_video = piece_start(config->buffer_dir, L"video_list.csv",
+                                                   segments[i].path, live, &lr->first_video);
+            else
+                lr->have_first_audio = piece_start(config->buffer_dir, L"audio_list.csv",
+                                                   segments[i].path, live, &lr->first_audio);
+        }
         if (copy_part(segments[i].path, lr->folder, video ? L"part" : L"audio_part",
                       video ? L"mkv" : L"mka", *parts)) {
             (*parts)++;
@@ -1926,6 +2084,7 @@ static void long_record_stop(const AppConfig *config, Recorder *recorder, LongRe
     int running = recorder->running;
     double video_tail = 0.0, audio_tail = 0.0, end_ms;
     TimingSnapshot timing;
+    PiecePositions positions;
     wchar_t saved[PATH_CAP];
     int has_audio_source = config->capture_game_audio || config->capture_microphone;
 
@@ -1954,9 +2113,12 @@ static void long_record_stop(const AppConfig *config, Recorder *recorder, LongRe
         remove_snapshot(lr->folder, 0, lr->audio_parts);
         return;
     }
+    positions.known = lr->have_first_video && lr->have_first_audio;
+    positions.first_video = lr->first_video;
+    positions.first_audio = lr->first_audio;
     if (assemble_clip(config, lr->folder, lr->video_parts, lr->audio_parts,
                       video_tail, audio_tail, video_tail > 0.0 && audio_tail > 0.0,
-                      running, &timing, (end_ms - lr->start_ms) / 1000.0, 0.0, 0.0,
+                      running, &timing, &positions, (end_ms - lr->start_ms) / 1000.0, 0.0, 0.0,
                       L"Recordings", lr->timestamp, saved, ARRAY_COUNT(saved))) {
         wprintf(L"LONG|stopped|%ls\n", saved);
         wprintf(L"Saved recording: %ls\n", saved);

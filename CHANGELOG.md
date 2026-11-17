@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.8
+
+- **Steadier sound sync in clips.** The sound and video recorders now note exactly where every recorded piece sits in time, and each clip's sound is lined up from those notes. Before, the match-up was estimated at the moment you saved, from progress reports that vary by up to a tenth of a second, so the sync wobbled from clip to clip. The old method is still used as a backup, for example right after the sound recorder restarts.
+
 ## 1.0.7
 
 - **Fixed the sound slowly drifting ahead of the video.** Headsets and sound cards run on their own clock, often a tiny bit fast. ClipShot only corrected big jumps, so a fast clock added up to over a tenth of a second after 10–15 minutes. It now keeps the sound within about 5 ms of real time for the whole session, by quietly dropping or repeating single samples you can't hear.
