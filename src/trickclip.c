@@ -2340,73 +2340,233 @@ static double kill_effect_score(const unsigned char *rgb, ShotScratch *scratch)
     return linear + 0.25 * raw;
 }
 
-/* Damage numbers: bold digits with a darker edge that pop up near the middle
-   of the screen. Shield hits (including headshots on shields) are blue/cyan,
-   headshots without shield yellow, body hits white (some creative maps also
-   show white when cracking shields). White pixels are ignored when they
-   belong to a long straight line, so kill streaks aren't mistaken for
-   numbers, and the top of the screen is skipped so the Victory Royale banner
-   doesn't count. Uses scratch->lum from kill_effect_score() on the same frame. */
-static double damage_number_score(const unsigned char *rgb, const ShotScratch *scratch)
-{
-    static const int directions[8][2] = {
-        {0, 1}, {1, 0}, {1, 1}, {1, -1}, {1, 2}, {2, 1}, {1, -2}, {2, -1}
-    };
-    double score = 0.0;
-    int x0 = SHOT_W * 20 / 100, x1 = SHOT_W * 80 / 100;
-    int y0 = SHOT_H * 20 / 100, y1 = SHOT_H * 80 / 100;
-    for (int y = y0; y < y1; y++) {
-        for (int x = x0; x < x1; x++) {
-            int i = y * SHOT_W + x;
-            const unsigned char *p = rgb + i * 3;
-            int lum = scratch->lum[i], low = 255;
-            int cyan, yellow, white;
-            if (lum <= 170) continue;
-            for (int dy = -2; dy <= 2; dy++)
-                for (int dx = -2; dx <= 2; dx++) {
-                    int v = scratch->lum[(y + dy) * SHOT_W + (x + dx)];
-                    if (v < low) low = v;
-                }
-            if (low >= lum - 90) continue;
-            cyan = p[1] > 200 && p[2] > 200 && p[0] < 170;
-            yellow = p[0] > 220 && p[1] > 190 && p[2] < 120;
-            white = p[0] > 225 && p[1] > 225 && p[2] > 225;
-            if (cyan || yellow) {
-                score += 1.0;
-            } else if (white) {
-                int longest = 0;
-                for (int d = 0; d < 8 && longest < 9; d++) {
-                    int run = 0;
-                    for (int k = -5; k <= 5; k++) {
-                        int yy = y + k * directions[d][0], xx = x + k * directions[d][1];
-                        if (yy < 0 || yy >= SHOT_H || xx < 0 || xx >= SHOT_W) continue;
-                        run += scratch->lum[yy * SHOT_W + xx] > 200;
-                    }
-                    if (run > longest) longest = run;
-                }
-                if (longest < 9) score += 1.0;
-            }
-        }
-    }
-    return score;
-}
-
 static int compare_doubles(const void *left, const void *right)
 {
     double a = *(const double *)left, b = *(const double *)right;
     return a < b ? -1 : a > b;
 }
 
-typedef struct {
-    double streak_time, streak_best, streak_median;
-    double damage_time, damage_best, damage_median;
-} FrameScan;
-
 static double median_of(double *values, size_t count)
 {
     qsort(values, count, sizeof(double), compare_doubles);
     return values[count / 2];
 }
+
+
+
+/* ---------- Damage numbers ----------
+
+   Damage numbers are bold digits (blue/cyan for shields, yellow for
+   headshots, white for health) with a sharp dark edge, sitting side by side
+   in a row near the middle of the screen. Frames are checked at 960x540 (enough detail for small numbers):
+
+   1. bright pixels in those colours are grouped into connected pieces;
+   2. a piece counts as a digit if it's digit-sized and digit-shaped, and the
+      ring just outside it is much darker (glowing sparkles and fireworks
+      fade out softly instead);
+   3. only digits that have a neighbour of the same height right next to
+      them count, since sniper damage is two or three digits.
+
+   The score is the number of pixels in such digit rows; anything else
+   (victory sparkles, kill streaks, the Victory Royale banner) scores 0. */
+
+#define DMG_W 960
+#define DMG_H 540
+#define DMG_FRAME_BYTES (DMG_W * DMG_H * 3)
+#define DMG_MAX_PIECES 64
+
+typedef struct {
+    unsigned char lum[DMG_W * DMG_H];
+    unsigned char mask[DMG_W * DMG_H];
+    int label[DMG_W * DMG_H];
+    int stack[DMG_W * DMG_H];
+} DamageScratch;
+
+typedef struct {
+    int top, left, height, width, size;
+} DigitPiece;
+
+static int digit_edge_is_sharp(const DamageScratch *d, int id, int top, int left, int height, int width)
+{
+    int histogram[256] = {0};
+    int ring = 0, inside_sum = 0, inside = 0, quarter, seen = 0, outside = 0;
+    int y0 = top - 3 < 0 ? 0 : top - 3, y1 = top + height + 3 > DMG_H ? DMG_H : top + height + 3;
+    int x0 = left - 3 < 0 ? 0 : left - 3, x1 = left + width + 3 > DMG_W ? DMG_W : left + width + 3;
+    for (int y = y0; y < y1; y++) {
+        for (int x = x0; x < x1; x++) {
+            int i = y * DMG_W + x, nearest = 99;
+            if (d->label[i] == id) {
+                inside_sum += d->lum[i];
+                inside++;
+                continue;
+            }
+            for (int dy = -3; dy <= 3 && nearest > 1; dy++) {
+                for (int dx = -3; dx <= 3; dx++) {
+                    int yy = y + dy, xx = x + dx, dist;
+                    if (yy < 0 || yy >= DMG_H || xx < 0 || xx >= DMG_W) continue;
+                    if (d->label[yy * DMG_W + xx] != id) continue;
+                    dist = abs(dy) > abs(dx) ? abs(dy) : abs(dx);
+                    if (dist < nearest) nearest = dist;
+                }
+            }
+            if (nearest >= 1 && nearest <= 2) {
+                histogram[d->lum[i]]++;
+                ring++;
+            }
+        }
+    }
+    if (inside == 0 || ring == 0) return 0;
+    quarter = ring / 4;
+    for (int v = 0; v < 256; v++) {
+        seen += histogram[v];
+        if (seen > quarter) {
+            outside = v;
+            break;
+        }
+    }
+    return inside_sum / inside - outside >= 85;
+}
+
+static double damage_number_score(const unsigned char *rgb, DamageScratch *d)
+{
+    DigitPiece pieces[DMG_MAX_PIECES];
+    int piece_count = 0, next_id = 0, used[DMG_MAX_PIECES] = {0};
+    int x0 = DMG_W * 20 / 100, x1 = DMG_W * 80 / 100;
+    int y0 = DMG_H * 20 / 100, y1 = DMG_H * 80 / 100;
+    double score = 0.0;
+
+    for (int i = 0; i < DMG_W * DMG_H; i++) {
+        const unsigned char *p = rgb + i * 3;
+        int x = i % DMG_W, y = i / DMG_W;
+        int lum = (p[0] * 77 + p[1] * 150 + p[2] * 29) >> 8;
+        int lo = p[0] < p[1] ? (p[0] < p[2] ? p[0] : p[2]) : (p[1] < p[2] ? p[1] : p[2]);
+        int cyan = p[1] > 190 && p[2] > 190 && p[0] < 180;
+        int yellow = p[0] > 215 && p[1] > 180 && p[2] < 130;
+        int white = lo > 220;
+        d->lum[i] = (unsigned char)lum;
+        d->label[i] = 0;
+        d->mask[i] = (unsigned char)(x >= x0 && x < x1 && y >= y0 && y < y1 &&
+                                     lum > 165 && (cyan || yellow || white));
+    }
+
+    for (int start = 0; start < DMG_W * DMG_H; start++) {
+        int top, bottom, left, right, size = 0, sp = 0, height, width, id;
+        if (!d->mask[start] || d->label[start]) continue;
+        id = ++next_id;
+        top = bottom = start / DMG_W;
+        left = right = start % DMG_W;
+        d->label[start] = id;
+        d->stack[sp++] = start;
+        while (sp > 0) {
+            int i = d->stack[--sp], x = i % DMG_W, y = i / DMG_W;
+            size++;
+            if (y < top) top = y;
+            if (y > bottom) bottom = y;
+            if (x < left) left = x;
+            if (x > right) right = x;
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dx = -1; dx <= 1; dx++) {
+                    int yy = y + dy, xx = x + dx, j;
+                    if (yy < 0 || yy >= DMG_H || xx < 0 || xx >= DMG_W) continue;
+                    j = yy * DMG_W + xx;
+                    if (d->mask[j] && !d->label[j]) {
+                        d->label[j] = id;
+                        d->stack[sp++] = j;
+                    }
+                }
+            }
+        }
+        height = bottom - top + 1;
+        width = right - left + 1;
+        if (height < 7 || height > 105 || width > height * 6 / 5 || size < 12) continue;
+        if (size * 100 < height * width * 20 || size * 100 > height * width * 85) continue;
+        if (piece_count >= DMG_MAX_PIECES) continue;
+        if (!digit_edge_is_sharp(d, id, top, left, height, width)) continue;
+        pieces[piece_count].top = top;
+        pieces[piece_count].left = left;
+        pieces[piece_count].height = height;
+        pieces[piece_count].width = width;
+        pieces[piece_count].size = size;
+        piece_count++;
+    }
+
+    for (int i = 0; i < piece_count; i++) {
+        for (int j = 0; j < piece_count; j++) {
+            int slack = pieces[i].height / 4 > 2 ? pieces[i].height / 4 : 2;
+            int gap = pieces[j].left - (pieces[i].left + pieces[i].width);
+            if (i == j) continue;
+            if (abs(pieces[i].top - pieces[j].top) <= slack &&
+                abs(pieces[i].height - pieces[j].height) <= slack &&
+                gap > 0 && gap <= pieces[i].height) {
+                used[i] = used[j] = 1;
+            }
+        }
+    }
+    for (int i = 0; i < piece_count; i++)
+        if (used[i]) score += pieces[i].size;
+    return score;
+}
+
+/* Scores damage numbers over `length` seconds from `from`; returns the
+   clearest frame's time and score. */
+static int scan_damage(const AppConfig *config, const wchar_t *video, const wchar_t *work,
+                       double from, double length, double fps, double *best_time, double *best_score)
+{
+    double *scores = NULL;
+    wchar_t raw_path[PATH_CAP], log_path[PATH_CAP], command[COMMAND_CAP];
+    DWORD exit_code = 1;
+    FILE *file = NULL;
+    unsigned char *frame = NULL;
+    DamageScratch *scratch = NULL;
+    size_t count = 0;
+    int ok = 0;
+
+    *best_score = 0.0;
+    *best_time = from;
+    if (from < 0.0) from = 0.0;
+    if (length <= 0.0) return 0;
+    swprintf_s(raw_path, ARRAY_COUNT(raw_path), L"%ls\\damage_scan.raw", work);
+    swprintf_s(log_path, ARRAY_COUNT(log_path), L"%ls\\damage_scan.log", work);
+    swprintf_s(command, ARRAY_COUNT(command),
+               L"\"%ls\" -hide_banner -loglevel error -y -ss %.3f -i \"%ls\" -t %.3f -an "
+               L"-vf \"fps=%g,scale=%d:%d:flags=area,format=rgb24\" -f rawvideo \"%ls\"",
+               config->ffmpeg_path, from, video, length, fps, DMG_W, DMG_H, raw_path);
+    if (!run_process_wait_logged(command, work, 180000, &exit_code, log_path) || exit_code != 0)
+        goto done;
+    frame = (unsigned char *)malloc(DMG_FRAME_BYTES);
+    scratch = (DamageScratch *)malloc(sizeof(DamageScratch));
+    scores = (double *)malloc(SHOT_MAX_FRAMES * sizeof(double));
+    if (!frame || !scratch || !scores || _wfopen_s(&file, raw_path, L"rb") != 0 || !file) goto done;
+    while (count < SHOT_MAX_FRAMES && fread(frame, 1, DMG_FRAME_BYTES, file) == DMG_FRAME_BYTES) {
+        scores[count] = damage_number_score(frame, scratch);
+        if (scores[count] > *best_score) {
+            *best_score = scores[count];
+            *best_time = from + (double)count / fps;
+        }
+        count++;
+    }
+    if (count > 0) {
+        /* A damage number pops up and disappears; text that stays on screen
+           the whole time (a player's name, say) is in most frames. Only what
+           stands out above the usual level counts. */
+        *best_score -= median_of(scores, count);
+        ok = 1;
+    }
+
+done:
+    if (file) fclose(file);
+    free(frame);
+    free(scratch);
+    free(scores);
+    DeleteFileW(raw_path);
+    DeleteFileW(log_path);
+    return ok;
+}
+
+typedef struct {
+    double streak_time, streak_best, streak_median;
+    double damage_time, damage_best, damage_median;
+} FrameScan;
 
 /* Scores `length` seconds of `video` starting at `from`, sampled at `fps`,
    for both kill streaks and damage numbers. For each it returns the best
@@ -2445,7 +2605,7 @@ static int scan_frames(const AppConfig *config, const wchar_t *video, const wcha
         goto done;
     while (count < SHOT_MAX_FRAMES && fread(frame, 1, SHOT_FRAME_BYTES, file) == SHOT_FRAME_BYTES) {
         streaks[count] = kill_effect_score(frame, scratch);
-        damage[count] = damage_number_score(frame, scratch);
+        damage[count] = 0.0;
         if (streaks[count] > streaks[best_streak]) best_streak = count;
         if (damage[count] > damage[best_damage]) best_damage = count;
         count++;
@@ -2475,11 +2635,6 @@ static int streaks_stand_out(const FrameScan *scan)
     return scan->streak_best >= scan->streak_median * 1.3 + 20.0;
 }
 
-static int damage_stands_out(const FrameScan *scan)
-{
-    return scan->damage_best >= scan->damage_median * 1.5 + 4.0 ||
-           scan->damage_best - scan->damage_median >= 8.0;
-}
 
 /* Finds the frame between `from` and `to` where kill streaks are most
    visible: a coarse pass at 10 FPS, then every frame around the best one.
@@ -2500,20 +2655,22 @@ static int find_kill_moment(const AppConfig *config, const wchar_t *video, const
     return 1;
 }
 
-/* Same idea for damage numbers: where the number is clearest. */
+/* Where the damage number is clearest. Any digit row at all is strong
+   evidence (other things score 0), so *found just means one was seen. */
 static int find_damage_moment(const AppConfig *config, const wchar_t *video, const wchar_t *work,
-                              double from, double to, double *moment, int *stands_out)
+                              double from, double to, double *moment, int *found)
 {
-    FrameScan coarse, fine;
+    double coarse_time, coarse_score, fine_time, fine_score;
     if (from < 0.0) from = 0.0;
     if (to - from < 0.2) return 0;
-    if (!scan_frames(config, video, work, from, to - from, 20.0, &coarse)) return 0;
-    *moment = coarse.damage_time;
-    if (stands_out) *stands_out = damage_stands_out(&coarse);
-    if (scan_frames(config, video, work, coarse.damage_time - 0.1, 0.2, 60.0, &fine) &&
-        fine.damage_best >= coarse.damage_best)
-        *moment = fine.damage_time;
-    return 1;
+    if (!scan_damage(config, video, work, from, to - from, 20.0, &coarse_time, &coarse_score)) return 0;
+    *moment = coarse_time;
+    if (found) *found = coarse_score >= 20.0;
+    if (coarse_score > 0.0 &&
+        scan_damage(config, video, work, coarse_time - 0.1, 0.2, 60.0, &fine_time, &fine_score) &&
+        fine_score >= coarse_score)
+        *moment = fine_time;
+    return coarse_score > 0.0;
 }
 
 static int export_frame(const AppConfig *config, const wchar_t *video, const wchar_t *work,
@@ -2648,22 +2805,16 @@ static void analyze_trickshot_clip(const AppConfig *config, const wchar_t *clip,
         stands_out) {
         out->streaks_found = 1;
         kill_time = out->streak_moment;
-        /* The number pops up at the hit, right around the streaks. */
-        from = kill_time - 1.0;
-        to = kill_time + 1.2;
+        /* The streaks peak once the victory camera kicks in; the damage
+           number popped up at the hit, a little before that. */
+        from = kill_time - 2.5;
+        to = kill_time + 0.3;
     }
-    if (find_damage_moment(config, clip, config->work_dir, from, to, &out->damage_moment, &stands_out)) {
-        if (stands_out) {
-            out->damage_found = 1;
-        } else if (out->streaks_found) {
-            /* The number didn't clearly stand out (e.g. a white number on
-               snow). It pops up at the hit, so use just after the kill. */
-            out->damage_moment = out->streak_moment + 0.1;
-            out->damage_found = 1;
-        } else if (estimate_known) {
-            out->damage_found = 1;
-        }
-        if (out->damage_found && kill_time < 0.0) kill_time = out->damage_moment;
+    if (find_damage_moment(config, clip, config->work_dir, from, to, &out->damage_moment, &stands_out) &&
+        stands_out) {
+        out->damage_found = 1;
+        /* The hit is the better moment to check scoped/no-scope. */
+        kill_time = out->damage_moment;
     }
 
     if (kill_time >= 0.0 && result->sniper && result->weapon_has_scope &&
@@ -2695,8 +2846,7 @@ static void save_trickshot_screenshot(const AppConfig *config, const wchar_t *cl
             saved++;
         }
     }
-    if (frame->damage_found &&
-        (!frame->streaks_found || fabs(frame->damage_moment - frame->streak_moment) > 0.02)) {
+    if (frame->damage_found) {
         swprintf_s(png, ARRAY_COUNT(png), L"%ls\\%ls_damage.png", config->screenshots_dir, name);
         if (export_frame(config, clip, config->work_dir, frame->damage_moment, png)) {
             wprintf(L"Saved screenshot: %ls\n", png);
@@ -2705,6 +2855,8 @@ static void save_trickshot_screenshot(const AppConfig *config, const wchar_t *cl
     }
     if (!saved)
         wprintf(L"Couldn't find the kill in this clip for a screenshot. Use Screenshot in My Clips to pick it yourself.\n");
+    else if (!frame->damage_found)
+        wprintf(L"Couldn't find the damage number for a screenshot. Use Screenshot in My Clips to pick it yourself.\n");
 }
 
 /* In-game screenshot key. Copies the video piece being recorded right now

@@ -401,6 +401,12 @@ internal sealed class DirectPcmPipeWriter : IDisposable
     private const long StallThreshold = 1_500_000;    // 150 ms
     private const long StallMargin = 500_000;         // 50 ms
     private const long MaxFill = 30 * QpcUnitsPerSecond;
+    // Audio devices run on their own clock, which can be a fraction of a
+    // percent fast or slow. Past this much drift the stream is nudged back by
+    // dropping or repeating single samples (about one per 400), which can't be
+    // heard, instead of letting it pile up over a long session.
+    private const long SoftDriftThreshold = 50_000;   // 5 ms
+    private const int NudgeEveryFrames = 400;
     private const int FillChunkFrames = FramesPerSecond / 10;
 
     private readonly NamedPipeServerStream pipe;
@@ -408,7 +414,14 @@ internal sealed class DirectPcmPipeWriter : IDisposable
     private readonly float gameVolume;
     private readonly MicrophoneSource? microphone;
     private readonly object writeLock = new();
+    // Where the written stream has reached on the real-time (QPC) timeline:
+    // its start plus everything written so far. Comparing each packet with
+    // this running total (not just with the previous packet) is what catches
+    // slow clock drift.
     private long coveredUntilQpc = -1;
+    private long streamStartQpc = -1;
+    private long streamFrames;
+    private long nudgedFrames;
     private long filledFrames;
     private long trimmedFrames;
     private long firstDevicePosition = -1;
@@ -452,7 +465,18 @@ internal sealed class DirectPcmPipeWriter : IDisposable
 
     public void Start()
     {
-        lock (writeLock) coveredUntilQpc = NowQpc();
+        lock (writeLock)
+        {
+            streamStartQpc = NowQpc();
+            streamFrames = 0;
+            coveredUntilQpc = streamStartQpc;
+        }
+    }
+
+    private void Advance(long frames)
+    {
+        streamFrames += frames;
+        coveredUntilQpc = streamStartQpc + QpcFor(streamFrames);
     }
 
     // Called every ~20 ms by the capture loop.
@@ -465,7 +489,6 @@ internal sealed class DirectPcmPipeWriter : IDisposable
             if (now - coveredUntilQpc < StallThreshold) return;
             long target = now - StallMargin;
             WriteSilence(FramesFor(Math.Min(target - coveredUntilQpc, MaxFill)));
-            coveredUntilQpc = target;
         }
     }
 
@@ -474,6 +497,7 @@ internal sealed class DirectPcmPipeWriter : IDisposable
     {
         if (frames <= 0) return;
         filledFrames += frames;
+        Advance(frames);
         while (frames > 0 && !failed)
         {
             int chunk = (int)Math.Min(frames, FillChunkFrames);
@@ -533,33 +557,68 @@ internal sealed class DirectPcmPipeWriter : IDisposable
             ReadOnlySpan<float> samples = MemoryMarshal.Cast<byte, float>(data);
             int frames = samples.Length / sourceFormat.Channels;
             int packetFrames = frames;
+            float[]? adjusted = null;
             if (qpcPosition > 0 && coveredUntilQpc >= 0)
             {
+                // Positive: the stream is behind real time. Negative: ahead.
                 long gap = qpcPosition - coveredUntilQpc;
                 if (gap > GapThreshold)
                 {
+                    // A real hole (device paused, packets lost): fill with silence.
                     WriteSilence(FramesFor(Math.Min(gap, MaxFill)));
                     if (failed) return;
                 }
                 else if (gap < -GapThreshold)
                 {
-                    // Part of this packet's time span was already covered by
-                    // stall silence; keep only the part after it.
+                    // Part of this packet's time span was already covered (by
+                    // stall silence, or built-up drift): keep only the rest.
                     int skip = (int)Math.Min(frames, FramesFor(-gap));
                     trimmedFrames += skip;
                     samples = samples[(skip * sourceFormat.Channels)..];
                     frames -= skip;
                 }
+                else if (Math.Abs(gap) > SoftDriftThreshold && frames > 1 && !silent)
+                {
+                    // Slow clock drift: drop (ahead) or repeat (behind) single
+                    // samples spread through the packet.
+                    int nudges = Math.Max(1, frames / NudgeEveryFrames);
+                    int channels = sourceFormat.Channels;
+                    int newFrames = gap < 0 ? frames - nudges : frames + nudges;
+                    adjusted = ArrayPool<float>.Shared.Rent(newFrames * channels);
+                    int step = frames / nudges;
+                    int written = 0;
+                    for (int frame = 0; frame < frames; frame++)
+                    {
+                        bool nudgeHere = (frame + 1) % step == 0 && (frame + 1) / step <= nudges;
+                        if (gap < 0 && nudgeHere) continue;               // drop this sample
+                        for (int c = 0; c < channels; c++)
+                            adjusted[written * channels + c] = samples[frame * channels + c];
+                        written++;
+                        if (gap > 0 && nudgeHere)                          // repeat it
+                        {
+                            for (int c = 0; c < channels; c++)
+                                adjusted[written * channels + c] = samples[frame * channels + c];
+                            written++;
+                        }
+                    }
+                    nudgedFrames += Math.Abs(written - frames);
+                    samples = adjusted.AsSpan(0, written * channels);
+                    frames = written;
+                }
             }
-            long packetEnd = qpcPosition > 0
-                ? qpcPosition + QpcFor(packetFrames)
-                : coveredUntilQpc + QpcFor(frames);
-            if (frames > 0)
+            try
             {
-                Emit(silent ? ReadOnlySpan<float>.Empty : samples[..(frames * 2)], frames);
-                if (failed) return;
+                if (frames > 0)
+                {
+                    Emit(silent ? ReadOnlySpan<float>.Empty : samples[..(frames * 2)], frames);
+                    if (failed) return;
+                    Advance(frames);
+                }
             }
-            coveredUntilQpc = Math.Max(coveredUntilQpc, packetEnd);
+            finally
+            {
+                if (adjusted is not null) ArrayPool<float>.Shared.Return(adjusted);
+            }
             TrackClock(packetFrames, discontinuity, devicePosition, qpcPosition);
         }
     }
@@ -591,7 +650,8 @@ internal sealed class DirectPcmPipeWriter : IDisposable
             $"Audio clock: {measuredRate:F2} frames/sec, " +
             $"WASAPI discontinuities {discontinuityCount}, " +
             $"silence filled {filledFrames * 1000 / FramesPerSecond} ms, " +
-            $"overlap trimmed {trimmedFrames * 1000 / FramesPerSecond} ms.");
+            $"overlap trimmed {trimmedFrames * 1000 / FramesPerSecond} ms, " +
+            $"drift corrected {nudgedFrames * 1000 / FramesPerSecond} ms.");
         nextDiagnosticQpc += 60 * QpcUnitsPerSecond;
     }
 

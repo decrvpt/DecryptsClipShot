@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.7
+
+- **Fixed the sound slowly drifting ahead of the video.** Headsets and sound cards run on their own clock, often a tiny bit fast. ClipShot only corrected big jumps, so a fast clock added up to over a tenth of a second after 10–15 minutes. It now keeps the sound within about 5 ms of real time for the whole session, by quietly dropping or repeating single samples you can't hear.
+- **Damage number screenshots fixed.** ClipShot now recognizes damage numbers by their shape (a row of bold digits with a sharp edge) in every color and size, any 2- or 3-digit value, so the Victory Royale sparkles and streaks are no longer mistaken for them. It looks for the number in the moments before the victory camera, when the hit happens. If no number is found, no damage screenshot is saved, instead of a duplicate of the streaks picture.
+
 ## 1.0.6
 
 - **Two trickshot screenshots:** one where the kill streaks are strongest, and one where the damage number is clearest (they're rarely at their best in the same frame). Kills on bots get only the damage-number picture, since bots don't get kill streaks. Damage numbers are recognized in every color: blue (shield, including headshots on shields), yellow (headshot) and white (health).
