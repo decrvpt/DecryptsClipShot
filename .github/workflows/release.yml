@@ -54,13 +54,42 @@ jobs:
       - name: Install Ninja
         run: choco install ninja -y --no-progress
 
-      # FFmpeg isn't stored in the repository (it's large); fetch a pinned
-      # Windows build. GPL builds include libx264, ClipShot's default encoder.
+      # FFmpeg isn't stored in the repository (it's large); fetch a Windows
+      # build. GPL builds include libx264, ClipShot's default encoder.
+      # BtbN rebuilds its "latest" release daily and files can be missing for
+      # a few minutes while that happens, so retry, then fall back to the
+      # newest dated build that has the file.
       - name: Download FFmpeg
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $name = "ffmpeg-n8.1-latest-win64-gpl-8.1"
-          Invoke-WebRequest "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/$name.zip" -OutFile ffmpeg.zip
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; "User-Agent" = "ClipShot-build" }
+          $ok = $false
+          for ($try = 1; $try -le 3 -and -not $ok; $try++) {
+            try {
+              Invoke-WebRequest "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/$name.zip" -OutFile ffmpeg.zip
+              $ok = $true
+            } catch {
+              Write-Host "Download attempt $try failed: $($_.Exception.Message)"
+              Start-Sleep -Seconds 20
+            }
+          }
+          if (-not $ok) {
+            Write-Host "Looking for the file in recent dated builds instead"
+            $releases = Invoke-RestMethod "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases?per_page=10" -Headers $headers
+            foreach ($release in $releases) {
+              $asset = $release.assets | Where-Object { $_.name -eq "$name.zip" } | Select-Object -First 1
+              if ($asset) {
+                Write-Host "Using $($release.tag_name)"
+                Invoke-WebRequest $asset.browser_download_url -OutFile ffmpeg.zip
+                $ok = $true
+                break
+              }
+            }
+          }
+          if (-not $ok) { throw "Could not download FFmpeg ($name)." }
           Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-download
           Copy-Item "ffmpeg-download\$name\bin\ffmpeg.exe" .
 
