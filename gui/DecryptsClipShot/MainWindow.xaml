@@ -126,7 +126,7 @@
                                 <StackPanel Orientation="Horizontal"><TextBlock Text="▣" Width="28" FontSize="15"/><TextBlock Text="Screenshots"/></StackPanel>
                             </Button>
                             <Button x:Name="LeaderboardNav" Style="{StaticResource NavButton}" Click="LeaderboardNav_Click">
-                                <StackPanel Orientation="Horizontal"><TextBlock Text="▲" Width="28" FontSize="13"/><TextBlock Text="Leaderboard"/></StackPanel>
+                                <StackPanel Orientation="Horizontal"><TextBlock Text="▲" Width="28" FontSize="13"/><TextBlock Text="Furthest Shots"/></StackPanel>
                             </Button>
                             <Button x:Name="ReplayAnalyzerNav" Style="{StaticResource NavButton}" Click="ReplayAnalyzerNav_Click">
                                 <StackPanel Orientation="Horizontal"><TextBlock Text="◎" Width="28" FontSize="16"/><TextBlock Text="Meter Checker"/></StackPanel>
@@ -394,8 +394,8 @@
                         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                         <Grid>
                             <StackPanel>
-                                <TextBlock Text="Leaderboard" FontSize="28" FontWeight="Bold"/>
-                                <TextBlock Text="Your longest automatic trickshots. Only shots ClipShot confirmed from the match itself count, so Meter Checker results and manual clips aren't on here." Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" TextWrapping="Wrap" MaxWidth="620" HorizontalAlignment="Left"/>
+                                <TextBlock Text="Your furthest shots" FontSize="28" FontWeight="Bold"/>
+                                <TextBlock Text="Your automatic trickshots, furthest first. Only shots ClipShot confirmed from the match itself count, so Meter Checker results and manual clips aren't on here." Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" TextWrapping="Wrap" MaxWidth="620" HorizontalAlignment="Left"/>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
                                 <TextBlock Text="Count bot kills" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,10,0"/>
@@ -406,7 +406,7 @@
                             <StackPanel>
                                 <ItemsControl x:Name="LeaderboardList" ItemTemplate="{StaticResource LeaderboardRowTemplate}"/>
                                 <TextBlock x:Name="LeaderboardEmptyText" Foreground="{StaticResource MutedBrush}" FontSize="12.5" Margin="0,4,0,18" TextWrapping="Wrap"
-                                           Text="No trickshots yet. Win a match with a sniper final kill and it shows up here, ranked by distance."/>
+                                           Text="No trickshots yet. Win a match with a sniper final kill and it shows up here, furthest first."/>
                             </StackPanel>
                         </ScrollViewer>
                     </Grid>

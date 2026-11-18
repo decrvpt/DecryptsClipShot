@@ -818,9 +818,9 @@ public partial class MainWindow : Window
             return "Couldn't find the kill for a screenshot. Open the clip in My Clips and click Screenshot to pick it yourself.";
         if (Starts(line, "Saved recording:") || Starts(line, "Long recording started")) return null; // shown by the LONG| lines
         if (Starts(line, "Added to the leaderboard"))
-            return "Added to your leaderboard";
+            return "Added to your furthest shots";
         if (Has(line, "Could not add the trickshot to the leaderboard"))
-            return "Couldn't add this trickshot to the leaderboard";
+            return "Couldn't add this trickshot to your furthest shots";
         if (Has(line, "Qualified trickshot"))
         {
             int open = line.IndexOf('('), close = line.IndexOf(')');

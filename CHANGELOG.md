@@ -2,7 +2,7 @@
 
 ## 1.0.3
 
-- **Distance leaderboard.** A new Leaderboard page ranks your automatic trickshots by distance, with the weapon, shot, who you eliminated and a button to watch the clip. Only shots ClipShot confirmed from the match itself count; Meter Checker results and manual clips can't be added. You can hide bot kills, and trickshots you already have are added the first time you open it. ClipShot also keeps each trickshot's match replay so shots can be verified for an online leaderboard later.
+- **Your furthest shots.** A new Furthest Shots page ranks your automatic trickshots by distance, with the weapon, shot, who you eliminated and a button to watch the clip. Only shots ClipShot confirmed from the match itself count; Meter Checker results and manual clips can't be added. You can hide bot kills, and trickshots you already have are added the first time you open it. ClipShot also keeps a copy of each trickshot's match replay.
 - **Automatic trickshots are sniper-only now.** A win only counts as a trickshot when your final kill was with a sniper. For any other weapon, save the clip yourself with **F8**.
 - **Fixed clips getting stuck in Pending.** If you left a match early or didn't win, the end-of-match clip could sit in Pending forever. Every automatic clip now gets a final answer: trickshots go to Trickshots, everything else goes to Rejected (or is removed if you've turned off keeping clips that don't qualify). Clips that were already stuck are moved to Rejected the next time ClipShot opens.
 - Removed the recording-time counter from the Home page. (Long recordings still show how long they've been running.)
