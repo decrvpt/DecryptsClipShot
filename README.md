@@ -1,6 +1,6 @@
 # Decrypt's ClipShot
 
-A Windows clipping app made for Fortnite trickshotters that works with any game. ClipShot keeps the last few minutes of whatever you play ready to save. Press **F8** after a great moment. In Fortnite, when you win with a sniper or heavy-ammo shot, the trickshot is clipped automatically and titled with its distance.
+A Windows clipping app made for Fortnite trickshotters that works with any game. ClipShot keeps the last few minutes of whatever you play ready to save. Press **F8** after a great moment. In Fortnite, when you win with a sniper final kill, the trickshot is clipped automatically and titled with its distance.
 
 Need a full session for YouTube? Press **F9** to start a long recording and **F9** again to save it. Press **F10** for a screenshot, and every trickshot gets a screenshot of the kill automatically.
 
@@ -32,7 +32,7 @@ Fortnite in **Borderless Windowed** mode works best.
 
 Clips are saved in your **Videos** folder, under **Decrypt's ClipShot**. In the app, **My Clips** shows them in two groups:
 
-- **Trickshots**: Victory Royales where your final kill used any sniper or any heavy-ammo weapon (such as the Hand Cannon), titled with the distance (for example `184m_2026-09-01_19-47-36.mp4`).
+- **Trickshots**: Victory Royales where your final kill was with a sniper, titled with the distance (for example "53m_no-scope"). Kills with other weapons can be saved any time with your clip shortcut.
 - **All clips**: everything you saved with F8, long recordings (marked **Recordings**), and automatic clips that didn't qualify as trickshots.
 
 Double-click a clip to watch it. Select one and click **Rename** to rename it. You can choose another folder in **Settings → Storage**.

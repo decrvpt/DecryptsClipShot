@@ -531,7 +531,6 @@ public partial class MainWindow : Window
 
     private void Timer_Tick(object? sender, EventArgs e)
     {
-        ElapsedText.Text = _captureStarted is null ? "00:00:00" : (DateTime.Now - _captureStarted.Value).ToString(@"hh\:mm\:ss");
         if (_longRecordStarted is not null)
             LongRecordText.Text = "Long recording " + (DateTime.Now - _longRecordStarted.Value).ToString(@"hh\:mm\:ss");
         if (!_stoppingEngine && _engine is { HasExited: true })
@@ -664,9 +663,11 @@ public partial class MainWindow : Window
                 _ = RefreshScreenshotsAsync();
             else if (line.Contains("Saved clip", StringComparison.OrdinalIgnoreCase) ||
                      line.Contains("Saved recording", StringComparison.OrdinalIgnoreCase) ||
-                     line.Contains("Qualified", StringComparison.OrdinalIgnoreCase))
+                     line.Contains("Qualified", StringComparison.OrdinalIgnoreCase) ||
+                     line.StartsWith("Added to the leaderboard", StringComparison.OrdinalIgnoreCase))
             {
                 _ = RefreshClipsAsync();
+                if (LeaderboardPanel.Visibility == Visibility.Visible) _ = RefreshLeaderboardAsync();
             }
         });
     }
@@ -816,6 +817,10 @@ public partial class MainWindow : Window
         if (Has(line, "final kill happened before this clip starts") || Has(line, "Couldn't find the kill in this clip"))
             return "Couldn't find the kill for a screenshot. Open the clip in My Clips and click Screenshot to pick it yourself.";
         if (Starts(line, "Saved recording:") || Starts(line, "Long recording started")) return null; // shown by the LONG| lines
+        if (Starts(line, "Added to the leaderboard"))
+            return "Added to your leaderboard";
+        if (Has(line, "Could not add the trickshot to the leaderboard"))
+            return "Couldn't add this trickshot to the leaderboard";
         if (Has(line, "Qualified trickshot"))
         {
             int open = line.IndexOf('('), close = line.IndexOf(')');
@@ -826,12 +831,16 @@ public partial class MainWindow : Window
         if (Starts(line, "Fortnite detected")) return "Fortnite opened";
         if (Starts(line, "Fortnite closed")) return "Fortnite closed";
         if (Starts(line, "Completed match replay detected")) return "Match finished, checking for a trickshot…";
-        if (Has(line, "did not qualify")) return "Not a trickshot this time";
+        if (Has(line, "did not qualify") || Starts(line, "Not a trickshot"))
+            return Has(line, "removed") ? "Not a trickshot this time" : "Not a trickshot this time (moved to Rejected)";
+        if (Starts(line, "This match couldn't be checked"))
+            return "Couldn't check this match for a trickshot. The clip was moved to Rejected.";
+        if (Starts(line, "Automatic trickshot clips are off")) return null;
+        if (Starts(line, "Moved ") && Has(line, "from Pending to Rejected"))
+            return line.Replace("unchecked clip(s)", "old clip(s) that were stuck").TrimEnd('.') + ".";
         if (Starts(line, "Replay analysis:") || Has(line, "analysis was inconclusive") ||
             Has(line, "analysis failed") || Has(line, "result could not be read"))
-            return Has(line, "failed") || Has(line, "could not") || Has(line, "inconclusive")
-                ? "Couldn't check this match. The clip was kept in Pending."
-                : null;
+            return null; // the outcome line below says where the clip went
         if (Has(line, "replay parser is missing") || Has(line, "Audio helper is missing"))
             return "Part of ClipShot is missing. Reinstall ClipShot to fix it.";
         if (Has(line, "encoder is falling behind"))
@@ -1612,6 +1621,7 @@ public partial class MainWindow : Window
             {
                 try { File.Move(oldInfo, newInfo, true); } catch (IOException) { }
             }
+            await RenameLeaderboardClipAsync(clip.FullPath, destination);
             AddActivity($"Renamed clip to {Path.GetFileName(destination)}");
             await RefreshClipsAsync();
         }
@@ -2079,12 +2089,14 @@ public partial class MainWindow : Window
         DashboardPanel.Visibility = panel == DashboardPanel ? Visibility.Visible : Visibility.Collapsed;
         ClipsPanel.Visibility = panel == ClipsPanel ? Visibility.Visible : Visibility.Collapsed;
         ScreenshotsPanel.Visibility = panel == ScreenshotsPanel ? Visibility.Visible : Visibility.Collapsed;
+        LeaderboardPanel.Visibility = panel == LeaderboardPanel ? Visibility.Visible : Visibility.Collapsed;
         ReplayAnalyzerPanel.Visibility = panel == ReplayAnalyzerPanel ? Visibility.Visible : Visibility.Collapsed;
         SettingsPanel.Visibility = panel == SettingsPanel ? Visibility.Visible : Visibility.Collapsed;
         // Highlight the current page in the sidebar.
         DashboardNav.Tag = panel == DashboardPanel ? "Active" : null;
         ClipsNav.Tag = panel == ClipsPanel ? "Active" : null;
         ScreenshotsNav.Tag = panel == ScreenshotsPanel ? "Active" : null;
+        LeaderboardNav.Tag = panel == LeaderboardPanel ? "Active" : null;
         ReplayAnalyzerNav.Tag = panel == ReplayAnalyzerPanel ? "Active" : null;
         SettingsNav.Tag = panel == SettingsPanel ? "Active" : null;
     }
@@ -2093,6 +2105,156 @@ public partial class MainWindow : Window
     private void ClipsNav_Click(object sender, RoutedEventArgs e) { ShowPanel(ClipsPanel); _ = RefreshClipsAsync(); }
     private void ScreenshotsNav_Click(object sender, RoutedEventArgs e) { ShowPanel(ScreenshotsPanel); _ = RefreshScreenshotsAsync(); }
     private void ReplayAnalyzerNav_Click(object sender, RoutedEventArgs e) => ShowPanel(ReplayAnalyzerPanel);
+    private void LeaderboardNav_Click(object sender, RoutedEventArgs e) { ShowPanel(LeaderboardPanel); _ = RefreshLeaderboardAsync(); }
+    private void LeaderboardBots_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded || _syncingLeaderboardToggle) return;
+        WriteIni("leaderboard", "count_bot_kills", LeaderboardBotsToggle.IsChecked == true ? "1" : "0");
+        _ = RefreshLeaderboardAsync();
+    }
+
+    // ---- Distance leaderboard -------------------------------------------------
+    // The engine writes work\leaderboard.jsonl itself, only for clips it confirmed
+    // as automatic trickshots, and keeps a copy of each match replay so a future
+    // online leaderboard can re-check the shot instead of trusting the number.
+    // The app never adds Meter Checker results or manual clips to it.
+
+    private string LeaderboardPath => Path.Combine(ResolveConfiguredPath("folders", "work", "work"), "leaderboard.jsonl");
+    private static readonly JsonSerializerOptions LeaderboardJson = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    private static readonly SemaphoreSlim LeaderboardLock = new(1, 1);
+    private bool _syncingLeaderboardToggle;
+
+    private static List<LeaderboardEntry> ReadLeaderboardFile(string path)
+    {
+        var entries = new List<LeaderboardEntry>();
+        if (!File.Exists(path)) return entries;
+        foreach (string line in File.ReadLines(path))
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            try
+            {
+                var entry = JsonSerializer.Deserialize<LeaderboardEntry>(line, LeaderboardJson);
+                if (entry is not null && entry.DistanceUU > 0 && entry.Clip.Length > 0) entries.Add(entry);
+            }
+            catch (JsonException) { }
+        }
+        return entries;
+    }
+
+    private static void WriteLeaderboardFile(string path, IEnumerable<LeaderboardEntry> entries)
+    {
+        var lines = entries.Select(entry => JsonSerializer.Serialize(new
+        {
+            clip = entry.Clip, distanceUU = entry.DistanceUU, weapon = entry.Weapon, shot = entry.Shot,
+            killer = entry.Killer, victim = entry.Victim, victimIsBot = entry.VictimIsBot,
+            date = entry.Date, replay = entry.Replay
+        }));
+        string temporary = path + ".tmp";
+        File.WriteAllLines(temporary, lines, new UTF8Encoding(false));
+        File.Move(temporary, path, true);
+    }
+
+    // Trickshots confirmed before the leaderboard existed are added once, from
+    // the details the engine saved with each one (work\clip_info). Those were
+    // also written only for automatic trickshots.
+    private void BackfillLeaderboard(string path, List<LeaderboardEntry> entries)
+    {
+        if (ReadIni("leaderboard", "backfilled", "0") == "1") return;
+        string trickshots = Path.Combine(ClipsDirectory, "Trickshots");
+        bool added = false;
+        if (Directory.Exists(trickshots))
+        {
+            foreach (string clip in Directory.EnumerateFiles(trickshots, "*.mp4"))
+            {
+                string name = Path.GetFileNameWithoutExtension(clip);
+                if (entries.Any(entry => entry.Clip.Equals(name, StringComparison.OrdinalIgnoreCase))) continue;
+                string info = ClipInfoPath(clip);
+                if (!File.Exists(info)) continue;
+                try
+                {
+                    using JsonDocument document = JsonDocument.Parse(File.ReadAllText(info));
+                    JsonElement root = document.RootElement;
+                    double distance = root.TryGetProperty("distanceUU", out var d) && d.TryGetDouble(out double value) ? value : 0;
+                    if (distance <= 0) continue;
+                    string shot = JsonText(root, "shotLabel", "");
+                    if (shot.Equals("Not recorded", StringComparison.OrdinalIgnoreCase)) shot = "";
+                    entries.Add(new LeaderboardEntry
+                    {
+                        Clip = name, DistanceUU = distance,
+                        Weapon = Present(JsonText(root, "weapon", "Sniper")), Shot = shot,
+                        Killer = JsonText(root, "killer", ""), Victim = JsonText(root, "victim", ""),
+                        VictimIsBot = root.TryGetProperty("victimIsBot", out var bot) && bot.ValueKind == JsonValueKind.True,
+                        Date = File.GetCreationTimeUtc(clip).ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)
+                    });
+                    added = true;
+                }
+                catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException) { }
+            }
+        }
+        if (added) WriteLeaderboardFile(path, entries);
+        WriteIni("leaderboard", "backfilled", "1");
+    }
+
+    private async Task RefreshLeaderboardAsync()
+    {
+        bool countBots = ReadIni("leaderboard", "count_bot_kills", "1") != "0";
+        _syncingLeaderboardToggle = true;
+        LeaderboardBotsToggle.IsChecked = countBots;
+        _syncingLeaderboardToggle = false;
+        string path = LeaderboardPath, trickshots = Path.Combine(ClipsDirectory, "Trickshots");
+        await LeaderboardLock.WaitAsync();
+        List<LeaderboardEntry> shown;
+        try
+        {
+            shown = await Task.Run(() =>
+            {
+                var entries = ReadLeaderboardFile(path);
+                try { BackfillLeaderboard(path, entries); } catch (IOException) { }
+                var list = entries.Where(entry => countBots || !entry.VictimIsBot)
+                    .OrderByDescending(entry => entry.DistanceUU).ToList();
+                for (int i = 0; i < list.Count; i++)
+                {
+                    list[i].Rank = i + 1;
+                    list[i].ClipPath = Path.Combine(trickshots, list[i].Clip + ".mp4");
+                    list[i].ClipExists = File.Exists(list[i].ClipPath);
+                }
+                return list;
+            });
+        }
+        finally { LeaderboardLock.Release(); }
+        LeaderboardList.ItemsSource = shown;
+        LeaderboardEmptyText.Visibility = shown.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void LeaderboardWatch_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is LeaderboardEntry entry && File.Exists(entry.ClipPath))
+            Process.Start(new ProcessStartInfo(entry.ClipPath) { UseShellExecute = true });
+    }
+
+    // Keeps a renamed trickshot linked to its leaderboard spot.
+    private async Task RenameLeaderboardClipAsync(string oldPath, string newPath)
+    {
+        string path = LeaderboardPath;
+        string oldName = Path.GetFileNameWithoutExtension(oldPath), newName = Path.GetFileNameWithoutExtension(newPath);
+        await LeaderboardLock.WaitAsync();
+        try
+        {
+            await Task.Run(() =>
+            {
+                var entries = ReadLeaderboardFile(path);
+                bool changed = false;
+                foreach (var entry in entries.Where(entry => entry.Clip.Equals(oldName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    entry.Clip = newName;
+                    changed = true;
+                }
+                if (changed) WriteLeaderboardFile(path, entries);
+            });
+        }
+        catch (IOException) { }
+        finally { LeaderboardLock.Release(); }
+    }
     private void SettingsNav_Click(object sender, RoutedEventArgs e) => ShowPanel(SettingsPanel);
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {

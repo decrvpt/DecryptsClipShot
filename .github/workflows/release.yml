@@ -1,8 +1,8 @@
 # Builds the installer on GitHub's own Windows computers and publishes it as a
 # release whenever you push a version tag, for example:
 #
-#   git tag v1.0.1
-#   git push origin v1.0.1
+#   git tag v1.0.3
+#   git push origin v1.0.3
 #
 # Players then download DecryptsClipShot-Setup.exe from the repository's
 # Releases page. Nobody (including you) has to run build_msi.bat by hand.

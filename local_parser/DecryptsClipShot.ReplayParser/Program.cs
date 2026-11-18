@@ -27,7 +27,7 @@ internal static class Program
         // "killer", "distanceUU" etc. first.
         /// <summary>
         /// True when the final kill used a weapon that counts for an automatic
-        /// trickshot: any sniper, or any weapon that uses heavy ammo.
+        /// trickshot: snipers only (other weapons are clipped manually).
         /// </summary>
         public bool TrickshotWeapon { get; init; }
         /// <summary>Raw Fortnite tags of the final kill, shown on hover in Meter Checker.</summary>
@@ -146,11 +146,11 @@ internal static class Program
         string rarity = KillRarity(tags, finalKill, victimData);
         WeaponResult weapon = WeaponCatalog.Resolve(tags, rarity, ReadMember(finalKill, "DeathCause"));
         rarity = CheckRarity(rarity, weapon);
-        // Automatic trickshots count any sniper OR any heavy-ammo weapon
-        // (Usopp's Slingshot, Flint-Knock Pistol, ...). Known weapons use
+        // Automatic trickshots count snipers only; anything else (heavy-ammo
+        // pistols, slingshots, ...) is clipped manually. Known weapons use
         // weapons.json; unknown ones fall back to tag keywords.
         bool sniper = weapon.IsSniper || (!weapon.Known && tags.Any(IsSniperTag));
-        bool trickshotWeapon = sniper || weapon.IsHeavyAmmo || (!weapon.Known && tags.Any(IsHeavyAmmoTag));
+        bool trickshotWeapon = sniper;
         double distance = finalKill.Distance ?? 0;
         string weaponName = weapon.Name;
         string killerPlatform = ResolvePlatform(players, finalKill.FinisherOrDowner, finalKill.FinisherOrDownerName);
@@ -165,8 +165,8 @@ internal static class Program
                       $"{distance / 100.0:F1} meters. Automatic clips only count the replay owner's kills."
                     : ignoredLaterEvents > 0
                         ? $"After ignoring {ignoredLaterEvents} non-combat or disconnect event(s), " +
-                          "the last valid elimination was not the replay owner's sniper or heavy-ammo kill."
-                        : "The last valid elimination was not the replay owner's sniper or heavy-ammo kill.";
+                          "the last valid elimination was not the replay owner's sniper kill."
+                        : "The last valid elimination was not the replay owner's sniper kill.";
 
             return new LocalReplayResult(true, placement, false, sniper,
                 distance, killer, victim, weaponName, rarity,
@@ -196,7 +196,7 @@ internal static class Program
             : trickshotWeapon ? "HeavyAmmo" : "Other";
 
         string summary = !trickshotWeapon
-            ? $"The replay owner's final elimination used {weaponName}, which is not a sniper or heavy-ammo weapon."
+            ? $"The replay owner's final elimination used {weaponName}, which is not a sniper."
             : sniper
                 ? $"Local analysis found a final {FormatShotType(shotType)} elimination at " +
                   $"{distance / 100.0:F1} meters ({ownerResolution}; " +

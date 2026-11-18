@@ -157,7 +157,7 @@ typedef struct {
     int placement;
     int has_kill;
     int sniper;
-    int trickshot_weapon; /* any sniper or heavy-ammo weapon */
+    int trickshot_weapon; /* counts for automatic trickshots: snipers only */
     double distance_uu;
     char killer[128];
     char victim[128];
@@ -2470,20 +2470,19 @@ static int call_local_replay_parser(const AppConfig *config, const wchar_t *repl
     wprintf(L"Analyzing the completed replay locally.\n");
     if (!run_process_wait_logged(command, config->base_dir, 120000,
                                  &exit_code, log_path) || exit_code != 0) {
-        wprintf(L"Local replay analysis failed; the clip remains in Pending. Details: %ls\n",
-                log_path);
+        wprintf(L"Local replay analysis failed. Details: %ls\n", log_path);
         return 0;
     }
 
     if (!parse_local_replay_result(result_path, result)) {
-        wprintf(L"Local replay result could not be read; the clip remains in Pending. Details: %ls\n",
-                log_path);
+        wprintf(L"Local replay result could not be read. Details: %ls\n", log_path);
         return 0;
     }
     if (!result->conclusive) {
-        wprintf(L"Local replay analysis was inconclusive: %hs The clip remains in Pending. Details: %ls\n",
-                result->reason[0] ? result->reason : "No reason was returned.", log_path);
-        return 0;
+        /* Usually a match you left early: the replay has no final result. */
+        wprintf(L"Local replay analysis was inconclusive: %hs\n",
+                result->reason[0] ? result->reason : "No reason was returned.");
+        return -1;
     }
 
     wprintf(L"Replay analysis: %hs\n",
@@ -3292,6 +3291,121 @@ static void save_clip_info(const AppConfig *config, const wchar_t *clip)
     CopyFileW(source, target, FALSE);
 }
 
+/* Leaderboard: only clips the engine itself confirmed as automatic trickshots
+   are written here (never Meter Checker results), one JSON object per line in
+   work\leaderboard.jsonl. The match replay is copied next to it so a future
+   online leaderboard can re-check the shot from the replay itself instead of
+   trusting the number. */
+static void json_put_utf8(FILE *file, const char *text)
+{
+    fputc('"', file);
+    for (; text && *text; text++) {
+        unsigned char c = (unsigned char)*text;
+        if (c == '"' || c == '\\') { fputc('\\', file); fputc(c, file); }
+        else if (c < 0x20) fprintf(file, "\\u%04x", c);
+        else fputc(c, file);
+    }
+    fputc('"', file);
+}
+
+static void json_put_wide(FILE *file, const wchar_t *text)
+{
+    char utf8[1024];
+    if (WideCharToMultiByte(CP_UTF8, 0, text ? text : L"", -1, utf8, sizeof(utf8), NULL, NULL) <= 0)
+        utf8[0] = '\0';
+    json_put_utf8(file, utf8);
+}
+
+static void add_leaderboard_entry(const AppConfig *config, const wchar_t *clip,
+                                  const MatchResult *result, const wchar_t *weapon,
+                                  const wchar_t *shot_label, const wchar_t *replay)
+{
+    wchar_t board[PATH_CAP], replay_dir[PATH_CAP], replay_copy[PATH_CAP], name[PATH_CAP];
+    const wchar_t *slash = wcsrchr(clip, L'\\');
+    wchar_t *dot;
+    FILE *file = NULL;
+    SYSTEMTIME now;
+    char date[40];
+    int have_replay = 0;
+
+    wcscpy_s(name, ARRAY_COUNT(name), slash ? slash + 1 : clip);
+    dot = wcsrchr(name, L'.');
+    if (dot) *dot = L'\0';
+    join_path(replay_dir, ARRAY_COUNT(replay_dir), config->work_dir, L"leaderboard_replays");
+    ensure_directory(replay_dir);
+    swprintf_s(replay_copy, ARRAY_COUNT(replay_copy), L"%ls\\%ls.replay", replay_dir, name);
+    if (replay && replay[0] && CopyFileW(replay, replay_copy, FALSE)) have_replay = 1;
+
+    GetSystemTime(&now);
+    sprintf_s(date, sizeof(date), "%04u-%02u-%02uT%02u:%02u:%02uZ", now.wYear, now.wMonth, now.wDay,
+              now.wHour, now.wMinute, now.wSecond);
+    join_path(board, ARRAY_COUNT(board), config->work_dir, L"leaderboard.jsonl");
+    if (_wfopen_s(&file, board, L"ab") != 0 || !file) {
+        wprintf(L"Could not add the trickshot to the leaderboard.\n");
+        return;
+    }
+    fputs("{\"clip\":", file);        json_put_wide(file, name);
+    fprintf(file, ",\"distanceUU\":%.1f", result->distance_uu);
+    fputs(",\"weapon\":", file);      json_put_wide(file, weapon);
+    fputs(",\"shot\":", file);        json_put_wide(file, shot_label);
+    fputs(",\"killer\":", file);      json_put_utf8(file, result->killer);
+    fputs(",\"victim\":", file);      json_put_utf8(file, result->victim);
+    fprintf(file, ",\"victimIsBot\":%s", result->victim_is_bot ? "true" : "false");
+    fputs(",\"date\":", file);        json_put_utf8(file, date);
+    fputs(",\"replay\":", file);      json_put_wide(file, have_replay ? replay_copy + wcslen(replay_dir) + 1 : L"");
+    fputs("}\n", file);
+    fclose(file);
+    wprintf(L"Added to the leaderboard: %.0fm.\n", result->distance_uu / 100.0);
+}
+
+/* An automatic clip that isn't a trickshot goes to Rejected (or is deleted
+   when "keep clips that do not qualify" is off). With always_keep it's kept
+   in Rejected either way: used when the replay couldn't be checked at all. */
+static void reject_pending_clip(const AppConfig *config, const wchar_t *clip, int always_keep,
+                                const wchar_t *why)
+{
+    wchar_t destination_dir[PATH_CAP], destination[PATH_CAP], timestamp[128];
+    if (!config->keep_rejected_clips && !always_keep) {
+        DeleteFileW(clip);
+        wprintf(L"%ls The clip was removed.\n", why);
+        return;
+    }
+    join_path(destination_dir, ARRAY_COUNT(destination_dir), config->clips_dir, L"Rejected");
+    ensure_directory(destination_dir);
+    make_timestamp(timestamp, ARRAY_COUNT(timestamp));
+    swprintf_s(destination, ARRAY_COUNT(destination), L"%ls\\Rejected_%ls.mp4", destination_dir, timestamp);
+    if (MoveFileExW(clip, destination, MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING))
+        wprintf(L"%ls The clip was moved to Rejected.\n", why);
+    else
+        print_last_error(L"Could not move the clip out of Pending");
+}
+
+/* Clips left in Pending by an earlier session (from before every clip got a
+   final answer, or if ClipShot closed mid-check) are moved to Rejected when
+   ClipShot starts. Nothing is deleted here. */
+static void sweep_pending_clips(const AppConfig *config)
+{
+    WIN32_FIND_DATAW data;
+    wchar_t search[PATH_CAP], path[PATH_CAP];
+    HANDLE find;
+    int moved = 0;
+    swprintf_s(search, ARRAY_COUNT(search), L"%ls\\Pending\\*.mp4", config->clips_dir);
+    find = FindFirstFileW(search, &data);
+    if (find == INVALID_HANDLE_VALUE) return;
+    do {
+        wchar_t destination_dir[PATH_CAP], destination[PATH_CAP];
+        if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        swprintf_s(path, ARRAY_COUNT(path), L"%ls\\Pending\\%ls", config->clips_dir, data.cFileName);
+        join_path(destination_dir, ARRAY_COUNT(destination_dir), config->clips_dir, L"Rejected");
+        ensure_directory(destination_dir);
+        swprintf_s(destination, ARRAY_COUNT(destination), L"%ls\\Rejected_%ls", destination_dir, data.cFileName);
+        if (MoveFileExW(path, destination, MOVEFILE_COPY_ALLOWED)) moved++;
+    } while (FindNextFileW(find, &data));
+    FindClose(find);
+    if (moved > 0)
+        wprintf(L"Moved %d unchecked clip(s) from Pending to Rejected.\n", moved);
+}
+
 static void classify_pending_clip(const AppConfig *config, const wchar_t *clip,
                                   const wchar_t *replay)
 {
@@ -3300,17 +3414,24 @@ static void classify_pending_clip(const AppConfig *config, const wchar_t *clip,
     const wchar_t *category;
     const wchar_t *shot_label;
 
+    int parsed;
     if (!config->local_replay_enabled) {
-        wprintf(L"Local replay analysis disabled; automatic clip remains in Pending.\n");
+        reject_pending_clip(config, clip, 0, L"Automatic trickshot clips are off.");
         return;
     }
-    if (!call_local_replay_parser(config, replay, &result)) {
+    parsed = call_local_replay_parser(config, replay, &result);
+    if (parsed == 0) {
+        reject_pending_clip(config, clip, 1, L"This match couldn't be checked for a trickshot.");
+        return;
+    }
+    if (parsed < 0) {
+        reject_pending_clip(config, clip, 0, L"Not a trickshot (the match didn't finish).");
         return;
     }
 
-    /* A trickshot: you won, you made the final kill, it was a sniper or a
-       heavy-ammo weapon, and the replay measured its distance. */
-    if (result.placement == 1 && result.has_kill && result.trickshot_weapon &&
+    /* A trickshot: you won, you made the final kill with a sniper, and the
+       replay measured its distance. Other weapons are clipped manually. */
+    if (result.placement == 1 && result.has_kill && result.sniper &&
         result.distance_uu > 0.0) {
         double meters = result.distance_uu / 100.0;
         TrickshotFrame frame;
@@ -3330,7 +3451,7 @@ static void classify_pending_clip(const AppConfig *config, const wchar_t *clip,
         else
             shot_label = L"";
         if (MultiByteToWideChar(CP_UTF8, 0, result.weapon, -1, weapon, ARRAY_COUNT(weapon)) <= 1)
-            wcscpy_s(weapon, ARRAY_COUNT(weapon), result.sniper ? L"Sniper" : L"Heavy-ammo weapon");
+            wcscpy_s(weapon, ARRAY_COUNT(weapon), L"Sniper");
         if (shot_label[0]) swprintf_s(name_label, ARRAY_COUNT(name_label), L"%ls_", shot_label);
         join_path(destination_dir, ARRAY_COUNT(destination_dir), config->clips_dir, category);
         ensure_directory(destination_dir);
@@ -3344,19 +3465,11 @@ static void classify_pending_clip(const AppConfig *config, const wchar_t *clip,
                 wprintf(L"Qualified trickshot (%ls, %.0fm): %ls\n", weapon, meters, destination);
             if (config->auto_screenshot) save_trickshot_screenshot(config, destination, &frame);
             save_clip_info(config, destination);
+            add_leaderboard_entry(config, destination, &result, weapon, shot_label, replay);
         } else
             print_last_error(L"Could not move qualified clip");
-    } else if (config->keep_rejected_clips) {
-        category = L"Rejected";
-        join_path(destination_dir, ARRAY_COUNT(destination_dir), config->clips_dir, category);
-        ensure_directory(destination_dir);
-        make_timestamp(timestamp, ARRAY_COUNT(timestamp));
-        swprintf_s(destination, ARRAY_COUNT(destination), L"%ls\\Rejected_%ls.mp4", destination_dir, timestamp);
-        if (MoveFileExW(clip, destination, MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING))
-            wprintf(L"Clip did not qualify and was moved to Rejected.\n");
     } else {
-        DeleteFileW(clip);
-        wprintf(L"Clip did not qualify and was removed.\n");
+        reject_pending_clip(config, clip, 0, L"Clip did not qualify.");
     }
 }
 
@@ -3453,6 +3566,7 @@ int wmain(int argc, wchar_t **argv)
     replay_watch_initialize(&watch, process_is_running(FORTNITE_PROCESS));
 
     ZeroMemory(&long_recording, sizeof(long_recording));
+    sweep_pending_clips(&config);
     save_event = CreateEventW(NULL, FALSE, FALSE, SAVE_EVENT_NAME);
     stop_event = CreateEventW(NULL, FALSE, FALSE, STOP_EVENT_NAME);
     long_event = CreateEventW(NULL, FALSE, FALSE, LONG_EVENT_NAME);
@@ -3558,7 +3672,8 @@ int wmain(int argc, wchar_t **argv)
 
         if (now - last_replay_check >= 1000) {
             wchar_t completed_replay[PATH_CAP];
-            if (replay_watch_poll(&watch, &config, completed_replay, ARRAY_COUNT(completed_replay))) {
+            if (replay_watch_poll(&watch, &config, completed_replay, ARRAY_COUNT(completed_replay)) &&
+                config.local_replay_enabled) {
                 /* The match ended when the replay stopped growing, not when the
                    stability timer finished (replay_stable_seconds later).
                    Anchor the clip end to match end + post-match seconds; the

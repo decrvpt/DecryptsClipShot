@@ -15,7 +15,7 @@
         <CheckBox x:Name="SniperCheck" Content="It's a sniper" Foreground="White" Margin="0,0,0,8" Checked="SniperCheck_Changed" Unchecked="SniperCheck_Changed"/>
         <CheckBox x:Name="ScopeCheck" Content="It has a scope (unticked for snipers like the Hunting Rifle)" Foreground="White" IsChecked="True" Margin="20,0,0,8"/>
         <CheckBox x:Name="HeavyAmmoCheck" Content="It uses heavy ammo" Foreground="White" Margin="0,0,0,4"/>
-        <TextBlock Text="Snipers and heavy-ammo weapons count for automatic trickshots." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,0"/>
+        <TextBlock Text="Only snipers count for automatic trickshots." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,0"/>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
             <Button Content="Cancel" Style="{StaticResource SecondaryButton}" Margin="0,0,10,0" Click="Cancel_Click"/>
             <Button x:Name="SaveButton" Content="Save" Style="{StaticResource PrimaryButton}" IsDefault="True" IsEnabled="False" Click="Save_Click"/>

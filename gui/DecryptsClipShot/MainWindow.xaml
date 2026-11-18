@@ -7,6 +7,27 @@
         Icon="/Assets/clipshot-red.ico" PreviewKeyDown="Window_PreviewKeyDown" StateChanged="Window_StateChanged"
         WindowStyle="None" ResizeMode="CanResize" Background="{StaticResource PageBrush}">
     <Window.Resources>
+        <DataTemplate x:Key="LeaderboardRowTemplate">
+            <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Margin="0,0,0,10" Padding="18,14">
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition Width="110"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding RankText}" FontSize="18" FontWeight="Bold" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="1" Text="{Binding DistanceText}" FontSize="24" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" VerticalAlignment="Center"/>
+                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding WeaponLine}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                            <TextBlock Text="{Binding VictimLine}" Style="{StaticResource CardHint}" TextTrimming="CharacterEllipsis"/>
+                            <Border Visibility="{Binding BotVisibility}" Background="#2A2A30" CornerRadius="6" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                                <TextBlock Text="Bot" FontSize="10.5" Foreground="{StaticResource MutedBrush}"/>
+                            </Border>
+                            <TextBlock Text="{Binding DateText}" Style="{StaticResource CardHint}" Margin="12,0,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <Button Grid.Column="3" Content="{Binding WatchText}" IsEnabled="{Binding ClipExists}" Style="{StaticResource SecondaryButton}" Padding="14,8" VerticalAlignment="Center" Click="LeaderboardWatch_Click"/>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
         <DataTemplate x:Key="ClipCardTemplate">
             <Border Width="252" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Margin="0,0,16,16" Padding="10" Cursor="Hand"
                     ToolTip="Double-click to watch">
@@ -103,6 +124,9 @@
                             </Button>
                             <Button x:Name="ScreenshotsNav" Style="{StaticResource NavButton}" Click="ScreenshotsNav_Click">
                                 <StackPanel Orientation="Horizontal"><TextBlock Text="▣" Width="28" FontSize="15"/><TextBlock Text="Screenshots"/></StackPanel>
+                            </Button>
+                            <Button x:Name="LeaderboardNav" Style="{StaticResource NavButton}" Click="LeaderboardNav_Click">
+                                <StackPanel Orientation="Horizontal"><TextBlock Text="▲" Width="28" FontSize="13"/><TextBlock Text="Leaderboard"/></StackPanel>
                             </Button>
                             <Button x:Name="ReplayAnalyzerNav" Style="{StaticResource NavButton}" Click="ReplayAnalyzerNav_Click">
                                 <StackPanel Orientation="Horizontal"><TextBlock Text="◎" Width="28" FontSize="16"/><TextBlock Text="Meter Checker"/></StackPanel>
@@ -201,10 +225,6 @@
                                         </StackPanel>
 
                                         <StackPanel Grid.Row="2" VerticalAlignment="Bottom" Margin="0,18,0,0">
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock x:Name="ElapsedText" Text="00:00:00" FontSize="34" FontWeight="Light"/>
-                                                <TextBlock Text="recording time" Style="{StaticResource CardHint}" FontSize="12" VerticalAlignment="Bottom" Margin="10,0,0,8"/>
-                                            </StackPanel>
                                             <Border x:Name="LongRecordBadge" Visibility="Collapsed" Background="#33E5484D" CornerRadius="8" Padding="12,6" Margin="0,8,0,0" HorizontalAlignment="Left">
                                                 <StackPanel Orientation="Horizontal">
                                                     <Ellipse Width="8" Height="8" Fill="#E5484D" VerticalAlignment="Center"/>
@@ -316,12 +336,12 @@
                             <StackPanel>
                                 <StackPanel Margin="0,0,0,10">
                                     <TextBlock Text="Trickshots" FontSize="18" FontWeight="SemiBold" Foreground="#F07178"/>
-                                    <TextBlock Text="Wins where your final kill used a sniper or heavy-ammo weapon, found automatically and titled with the distance." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,0"/>
+                                    <TextBlock Text="Wins where your final kill was with a sniper, found automatically and titled with the distance." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,0"/>
                                 </StackPanel>
                                 <ListBox x:Name="TrickshotClipsList" Background="Transparent" BorderThickness="0" SelectionChanged="ClipList_SelectionChanged" MouseDoubleClick="ClipList_MouseDoubleClick" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled" ItemTemplate="{StaticResource ClipCardTemplate}">
                                     <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ListBox.ItemsPanel>
                                 </ListBox>
-                                <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12.5" Margin="0,4,0,18" Text="No trickshots yet. Win a match with a final kill from any sniper or heavy-ammo weapon (like the Hand Cannon) and ClipShot saves it here automatically.">
+                                <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12.5" Margin="0,4,0,18" Text="No trickshots yet. Win a match with a sniper final kill and ClipShot saves it here automatically. For other weapons, save a clip with your clip shortcut.">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
                                             <Setter Property="Visibility" Value="Collapsed"/>
@@ -366,6 +386,27 @@
                                 </ListBox>
                                 <TextBlock x:Name="ScreenshotsEmptyText" Foreground="{StaticResource MutedBrush}" FontSize="12.5" Margin="0,4,0,18" TextWrapping="Wrap"
                                            Text="No screenshots yet. Trickshots get one automatically, press F10 in game, or open a clip in My Clips and click Screenshot."/>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+
+                    <Grid x:Name="LeaderboardPanel" Visibility="Collapsed">
+                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                        <Grid>
+                            <StackPanel>
+                                <TextBlock Text="Leaderboard" FontSize="28" FontWeight="Bold"/>
+                                <TextBlock Text="Your longest automatic trickshots. Only shots ClipShot confirmed from the match itself count, so Meter Checker results and manual clips aren't on here." Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" TextWrapping="Wrap" MaxWidth="620" HorizontalAlignment="Left"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+                                <TextBlock Text="Count bot kills" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <CheckBox x:Name="LeaderboardBotsToggle" Style="{StaticResource SwitchToggle}" IsChecked="True" VerticalAlignment="Center" Checked="LeaderboardBots_Changed" Unchecked="LeaderboardBots_Changed"/>
+                            </StackPanel>
+                        </Grid>
+                        <ScrollViewer Grid.Row="1" Margin="0,22,0,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel>
+                                <ItemsControl x:Name="LeaderboardList" ItemTemplate="{StaticResource LeaderboardRowTemplate}"/>
+                                <TextBlock x:Name="LeaderboardEmptyText" Foreground="{StaticResource MutedBrush}" FontSize="12.5" Margin="0,4,0,18" TextWrapping="Wrap"
+                                           Text="No trickshots yet. Win a match with a sniper final kill and it shows up here, ranked by distance."/>
                             </StackPanel>
                         </ScrollViewer>
                     </Grid>
