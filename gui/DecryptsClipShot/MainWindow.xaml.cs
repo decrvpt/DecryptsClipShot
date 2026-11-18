@@ -83,6 +83,7 @@ public partial class MainWindow : Window
         EnsureUserConfig();
         MigrateRecommendedDefaults();
         LoadSettings();
+        SyncQuickSwitches();
         InitializeTrayIcon();
         // The installer's "Start with Windows" shortcut passes --startup:
         // open quietly in the system tray instead of showing the window.
@@ -100,8 +101,16 @@ public partial class MainWindow : Window
             await CheckForUpdatesAsync(manual: false);
         };
         _ = RefreshClipsAsync();
+        _ = RefreshScreenshotsAsync();
         SetStatus("Engine offline", false, false);
+        UpdateSourceStatus();
         AddActivity("ClipShot is ready");
+        // Recording starts as soon as ClipShot opens (Settings can turn this off).
+        Loaded += (_, _) =>
+        {
+            if (ReadIni("app", "start_recording_on_open", "1") == "1" && _engine is null)
+                EngineButton_Click(EngineButton, new RoutedEventArgs());
+        };
         if (_pendingStartupMessage is not null) AddActivity(_pendingStartupMessage);
     }
 
@@ -131,7 +140,9 @@ public partial class MainWindow : Window
         int.TryParse(ReadIni("app", "defaults_version", "0"), out int defaultsVersion);
         if (defaultsVersion < 7) MigrateToDefaults7();
         if (defaultsVersion < 8) MigrateClipsToVideosFolder();
-        WriteIni("app", "defaults_version", "8");
+        // Version 9: ClipShot records any game; waiting for Fortnite became optional (off).
+        if (defaultsVersion < 9) WriteIni("app", "start_only_with_fortnite", "0");
+        WriteIni("app", "defaults_version", "9");
     }
 
     // Version 8: clips moved from "<install folder>\clips" to Videos\Decrypt's ClipShot,
@@ -248,7 +259,9 @@ public partial class MainWindow : Window
         ShotHotkeyBox.Text = ReadIni("controls", "screenshot_hotkey", "F10");
         TrickshotScreenshotCheck.IsChecked = ReadIni("app", "trickshot_screenshot", "1") == "1";
         UpdateHotkeyHint();
-        FortniteOnlyCheck.IsChecked = ReadIni("app", "start_only_with_fortnite", "1") == "1";
+        FortniteOnlyCheck.IsChecked = ReadIni("app", "start_only_with_fortnite", "0") == "1";
+        StartOnOpenCheck.IsChecked = ReadIni("app", "start_recording_on_open", "1") == "1";
+        StartWithWindowsCheck.IsChecked = IsStartWithWindowsEnabled();
         LocalReplayCheck.IsChecked = ReadIni("local_replay", "enabled", "1") == "1";
         KeepRejectedCheck.IsChecked = ReadIni("app", "keep_rejected_clips", "1") == "1";
         MinimizeToTrayCheck.IsChecked = ReadIni("app", "minimize_to_tray", "0") == "1";
@@ -349,31 +362,171 @@ public partial class MainWindow : Window
 
     private void SetStatus(string text, bool engineOnline, bool recording)
     {
-        // Red = recording, green = on and waiting for Fortnite, grey = off.
+        _ = text;
+        bool waitsForFortnite = FortniteOnlyCheck.IsChecked == true;
+        // Red = recording, green = on and waiting, grey = off.
         var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(
-            recording ? "#EF5555" : engineOnline ? "#31D08B" : "#67677A"));
-        string shortStatus = recording ? "Recording" : engineOnline ? "Waiting for Fortnite" : "Off";
+            recording ? "#E5484D" : engineOnline ? "#3DD68C" : "#67677A"));
+        string shortStatus = recording ? "Recording"
+            : engineOnline ? (waitsForFortnite ? "Waiting for Fortnite" : "Starting…")
+            : "Off";
         SidebarStatusDot.Fill = brush;
         HeaderStatusDot.Fill = brush;
+        RecStatusDot.Fill = brush;
         SidebarStatusText.Text = shortStatus;
         HeaderStatusText.Text = shortStatus;
-        CaptureStateText.Text = recording ? "Recording Fortnite"
-            : engineOnline ? "Waiting for Fortnite"
+        RecStatusValue.Text = shortStatus;
+        CaptureStateText.Text = recording ? "Recording in the background"
+            : engineOnline ? (waitsForFortnite ? "Waiting for Fortnite" : "Getting ready…")
             : "ClipShot is off";
-        CaptureSubtext.Text = recording ? $"Press {HotkeyBox.Text} to save the last {ClipLengthValueText.Text}"
-            : engineOnline ? "Recording starts by itself when you open Fortnite"
-            : "Click Start ClipShot, then launch Fortnite";
+        CaptureSubtext.Text = recording ? $"Press {HotkeyBox.Text} any time to save the last {ClipLengthValueText.Text}"
+            : engineOnline ? (waitsForFortnite ? "Recording starts by itself when you open Fortnite" : "Recording starts in a moment")
+            : "Click Start ClipShot to begin recording";
         // The button describes the action it will perform, not the current state.
         EngineButton.Content = engineOnline ? "Stop ClipShot" : "Start ClipShot";
         EngineButton.ToolTip = engineOnline
             ? "Stop recording. Clips you already saved are kept."
-            : "Start recording. ClipShot waits for Fortnite, then keeps the last few minutes ready to save.";
+            : "Start recording. ClipShot keeps the last few minutes ready to save.";
         SaveClipButton.IsEnabled = engineOnline;
         LongRecordButton.IsEnabled = recording && !_longRecordSaving;
         if (!engineOnline) SetLongRecording(false);
         _captureActive = recording;
         if (recording && _captureStarted is null) _captureStarted = DateTime.Now;
         if (!recording) _captureStarted = null;
+    }
+
+    // ---------- Dashboard ----------
+
+    // Game sound / microphone rows reflect the saved settings.
+    private void UpdateSourceStatus()
+    {
+        var on = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#3DD68C"));
+        var off = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#67677A"));
+        bool game = ReadIni("recording", "capture_game_audio", "1") == "1";
+        bool mic = ReadIni("recording", "capture_microphone", "0") == "1";
+        GameAudioStatusDot.Fill = game ? on : off;
+        GameAudioStatusValue.Text = game ? "On" : "Off";
+        MicStatusDot.Fill = mic ? on : off;
+        MicStatusValue.Text = mic ? "On" : "Off";
+    }
+
+    private void SetFortniteRunning(bool running)
+    {
+        FortniteStatusDot.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString(running ? "#3DD68C" : "#67677A"));
+        FortniteStatusValue.Text = running ? "Running · trickshots on" : "Not running";
+    }
+
+    private void RecentTab_Click(object sender, RoutedEventArgs e) => ShowDashboardTab(activity: false);
+    private void ActivityTab_Click(object sender, RoutedEventArgs e) => ShowDashboardTab(activity: true);
+
+    private void ShowDashboardTab(bool activity)
+    {
+        RecentClipsPanel.Visibility = activity ? Visibility.Collapsed : Visibility.Visible;
+        ActivityList.Visibility = activity ? Visibility.Visible : Visibility.Collapsed;
+        RecentSideButton.Visibility = activity ? Visibility.Collapsed : Visibility.Visible;
+        ActivitySideButton.Visibility = activity ? Visibility.Visible : Visibility.Collapsed;
+        RecentTabButton.Foreground = (Brush)FindResource(activity ? "MutedBrush" : "TextBrush");
+        ActivityTabButton.Foreground = (Brush)FindResource(activity ? "TextBrush" : "MutedBrush");
+    }
+
+    private bool _syncingSwitches;
+
+    private void SyncQuickSwitches()
+    {
+        _syncingSwitches = true;
+        QuickStartOnOpenSwitch.IsChecked = StartOnOpenCheck.IsChecked;
+        QuickWindowsSwitch.IsChecked = StartWithWindowsCheck.IsChecked;
+        QuickTrickshotSwitch.IsChecked = LocalReplayCheck.IsChecked;
+        QuickScreenshotSwitch.IsChecked = TrickshotScreenshotCheck.IsChecked;
+        QuickMicSwitch.IsChecked = MicrophoneCheck.IsChecked;
+        _syncingSwitches = false;
+    }
+
+    // Dashboard switches save immediately and keep the Settings page in step.
+    private void QuickSwitch_Click(object sender, RoutedEventArgs e)
+    {
+        if (_syncingSwitches || sender is not CheckBox toggle) return;
+        bool on = toggle.IsChecked == true;
+        string value = on ? "1" : "0";
+        bool needsRestart = false;
+        if (toggle == QuickStartOnOpenSwitch)
+        {
+            StartOnOpenCheck.IsChecked = on;
+            WriteIni("app", "start_recording_on_open", value);
+        }
+        else if (toggle == QuickWindowsSwitch)
+        {
+            StartWithWindowsCheck.IsChecked = on;
+            SetStartWithWindows(on);
+            QuickWindowsSwitch.IsChecked = IsStartWithWindowsEnabled();
+        }
+        else if (toggle == QuickTrickshotSwitch)
+        {
+            LocalReplayCheck.IsChecked = on;
+            WriteIni("local_replay", "enabled", value);
+            needsRestart = true;
+        }
+        else if (toggle == QuickScreenshotSwitch)
+        {
+            TrickshotScreenshotCheck.IsChecked = on;
+            WriteIni("app", "trickshot_screenshot", value);
+            needsRestart = true;
+        }
+        else if (toggle == QuickMicSwitch)
+        {
+            MicrophoneCheck.IsChecked = on;
+            WriteIni("recording", "capture_microphone", value);
+            UpdateSourceStatus();
+            needsRestart = true;
+        }
+        if (needsRestart && _engine is { HasExited: false })
+            AddActivity("Saved. Stop and start ClipShot to use the new setting.");
+    }
+
+    // ---------- Open with Windows ----------
+    // A "Run" entry opens ClipShot quietly in the tray at sign-in. The installer's
+    // optional Startup-folder shortcut counts too, so ClipShot never opens twice.
+
+    private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string RunValueName = "Decrypt's ClipShot";
+
+    private static string StartupShortcutPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.Startup), "Decrypt's ClipShot.lnk");
+
+    private static bool IsStartWithWindowsEnabled()
+    {
+        try
+        {
+            using RegistryKey? key = Registry.CurrentUser.OpenSubKey(RunKeyPath);
+            if (key?.GetValue(RunValueName) is string) return true;
+        }
+        catch (Exception exception) when (exception is System.Security.SecurityException or UnauthorizedAccessException or IOException) { }
+        return File.Exists(StartupShortcutPath);
+    }
+
+    private void SetStartWithWindows(bool enabled)
+    {
+        try
+        {
+            using RegistryKey key = Registry.CurrentUser.CreateSubKey(RunKeyPath);
+            if (enabled)
+            {
+                if (!File.Exists(StartupShortcutPath))
+                {
+                    string exe = Environment.ProcessPath ?? Path.Combine(BaseDirectory, "DecryptsClipShot.exe");
+                    key.SetValue(RunValueName, $"\"{exe}\" --startup");
+                }
+            }
+            else
+            {
+                key.DeleteValue(RunValueName, throwOnMissingValue: false);
+                if (File.Exists(StartupShortcutPath)) File.Delete(StartupShortcutPath);
+            }
+        }
+        catch (Exception exception) when (exception is System.Security.SecurityException or UnauthorizedAccessException or IOException)
+        {
+            AddActivity("Couldn't change the Open with Windows setting.");
+        }
     }
 
     private void Timer_Tick(object? sender, EventArgs e)
@@ -460,7 +613,7 @@ public partial class MainWindow : Window
             _engine.Start();
             _engine.BeginOutputReadLine();
             _engine.BeginErrorReadLine();
-            SetStatus("Waiting for Fortnite", true, false);
+            SetStatus("Starting", true, false);
             AddActivity("ClipShot started");
             await Task.Delay(300);
         }
@@ -499,17 +652,22 @@ public partial class MainWindow : Window
             string? friendly = FriendlyEngineMessage(line);
             if (friendly is not null) AddActivity(friendly);
             if (line.Contains("Capture started", StringComparison.OrdinalIgnoreCase))
-                SetStatus("Recording Fortnite", true, true);
+                SetStatus("Recording", true, true);
             else if (line.Contains("Capture stopped", StringComparison.OrdinalIgnoreCase))
-                SetStatus("Waiting for Fortnite", true, false);
-            else if (line.Contains("Fortnite detected", StringComparison.OrdinalIgnoreCase))
-                SetStatus("Fortnite detected", true, _captureActive);
+                SetStatus("Waiting", true, false);
+            else if (line.StartsWith("Fortnite detected", StringComparison.OrdinalIgnoreCase) ||
+                     line.StartsWith("Fortnite was already running", StringComparison.OrdinalIgnoreCase))
+                SetFortniteRunning(true);
+            else if (line.StartsWith("Fortnite closed", StringComparison.OrdinalIgnoreCase))
+                SetFortniteRunning(false);
             else if (line.StartsWith("Saved screenshot", StringComparison.OrdinalIgnoreCase))
                 _ = RefreshScreenshotsAsync();
             else if (line.Contains("Saved clip", StringComparison.OrdinalIgnoreCase) ||
                      line.Contains("Saved recording", StringComparison.OrdinalIgnoreCase) ||
                      line.Contains("Qualified", StringComparison.OrdinalIgnoreCase))
+            {
                 _ = RefreshClipsAsync();
+            }
         });
     }
 
@@ -588,7 +746,7 @@ public partial class MainWindow : Window
         }
         else if (state.Equals("unavailable", StringComparison.OrdinalIgnoreCase))
         {
-            AddActivity("Long recording starts once ClipShot is recording Fortnite.");
+            AddActivity("Long recording starts once ClipShot is recording.");
         }
     }
 
@@ -603,7 +761,7 @@ public partial class MainWindow : Window
             _ = RefreshScreenshotsAsync();
         }
         else if (state.Equals("unavailable", StringComparison.OrdinalIgnoreCase))
-            AddActivity("Screenshots work once ClipShot is recording Fortnite.");
+            AddActivity("Screenshots work once ClipShot is recording.");
         else
             AddActivity("Couldn't take that screenshot. Try again in a second.");
     }
@@ -663,7 +821,7 @@ public partial class MainWindow : Window
             int open = line.IndexOf('('), close = line.IndexOf(')');
             return open >= 0 && close > open ? $"Trickshot saved! {line[(open + 1)..close].Replace(" final kill, ", ", ")}" : "Trickshot saved!";
         }
-        if (Starts(line, "Capture started")) return "Recording Fortnite";
+        if (Starts(line, "Capture started")) return "Recording started";
         if (Starts(line, "Capture stopped")) return "Recording paused";
         if (Starts(line, "Fortnite detected")) return "Fortnite opened";
         if (Starts(line, "Fortnite closed")) return "Fortnite closed";
@@ -975,6 +1133,10 @@ public partial class MainWindow : Window
         WriteIni("app", "trickshot_screenshot", TrickshotScreenshotCheck.IsChecked == true ? "1" : "0");
         UpdateHotkeyHint();
         WriteIni("app", "start_only_with_fortnite", FortniteOnlyCheck.IsChecked == true ? "1" : "0");
+        WriteIni("app", "start_recording_on_open", StartOnOpenCheck.IsChecked == true ? "1" : "0");
+        SetStartWithWindows(StartWithWindowsCheck.IsChecked == true);
+        SyncQuickSwitches();
+        UpdateSourceStatus();
         WriteIni("local_replay", "enabled", LocalReplayCheck.IsChecked == true ? "1" : "0");
         WriteIni("app", "keep_rejected_clips", KeepRejectedCheck.IsChecked == true ? "1" : "0");
         WriteIni("app", "minimize_to_tray", MinimizeToTrayCheck.IsChecked == true ? "1" : "0");
@@ -1248,8 +1410,14 @@ public partial class MainWindow : Window
     private void CaptureLongHotkey_Click(object sender, RoutedEventArgs e) => BeginHotkeyCapture(LongHotkeyBox, LongHotkeyCaptureButton);
     private void CaptureShotHotkey_Click(object sender, RoutedEventArgs e) => BeginHotkeyCapture(ShotHotkeyBox, ShotHotkeyCaptureButton);
 
-    private void UpdateHotkeyHint() =>
+    private void UpdateHotkeyHint()
+    {
         HotkeyHintText.Text = $"{HotkeyBox.Text.Trim()} clip  •  {LongHotkeyBox.Text.Trim()} long recording  •  {ShotHotkeyBox.Text.Trim()} screenshot";
+        HeaderHotkeysText.Text = $"{HotkeyBox.Text.Trim()} clip  ·  {LongHotkeyBox.Text.Trim()} long  ·  {ShotHotkeyBox.Text.Trim()} screenshot";
+        HotkeyMetric.Text = HotkeyBox.Text.Trim();
+        LongHotkeyMetric.Text = LongHotkeyBox.Text.Trim();
+        ShotHotkeyMetric.Text = ShotHotkeyBox.Text.Trim();
+    }
 
     private void BeginHotkeyCapture(TextBox target, Button button)
     {
@@ -1415,12 +1583,12 @@ public partial class MainWindow : Window
             WindowStyle = WindowStyle.None,
             ResizeMode = ResizeMode.NoResize,
             ShowInTaskbar = false,
-            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0D0909"))
+            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#09090B"))
         };
         var border = new Border
         {
-            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1A1111")),
-            BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#5A2929")),
+            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#141417")),
+            BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#34343A")),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(12),
             Padding = new Thickness(22)
@@ -1514,6 +1682,8 @@ public partial class MainWindow : Window
                 });
             }
             ScreenshotsEmptyText.Visibility = _screenshots.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            ScreenshotCountText.Text = _screenshots.Count == 0 ? "None yet · saved in your Pictures folder"
+                : _screenshots.Count == 1 ? "1 screenshot saved" : $"{_screenshots.Count} screenshots saved";
             ScreenshotsEmptyText.Text = $"No screenshots yet. Trickshots get one automatically, press {ShotHotkeyBox.Text} in game, or open a clip in My Clips and click Screenshot.";
         }
         catch (IOException) { }

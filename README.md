@@ -1,6 +1,6 @@
 # Decrypt's ClipShot
 
-A Windows clipping app made for Fortnite. ClipShot keeps the last few minutes of your game ready to save. Press **F8** after a great moment, and when you win with a sniper or heavy-ammo shot, the trickshot is clipped automatically and titled with its distance.
+A Windows clipping app made for Fortnite trickshotters that works with any game. ClipShot keeps the last few minutes of whatever you play ready to save. Press **F8** after a great moment. In Fortnite, when you win with a sniper or heavy-ammo shot, the trickshot is clipped automatically and titled with its distance.
 
 Need a full session for YouTube? Press **F9** to start a long recording and **F9** again to save it. Press **F10** for a screenshot, and every trickshot gets a screenshot of the kill automatically.
 
@@ -21,7 +21,7 @@ No OBS, no accounts, no subscriptions.
 
 1. **Turn on Fortnite replays.** In Fortnite's settings, turn on **Record Replays**. ClipShot needs this to find trickshots automatically. Manual clips work without it.
 2. **Open ClipShot → Settings → Optimize for my PC**, then **Save settings**. ClipShot tests your graphics card and picks smooth settings.
-3. **Click Start ClipShot** on the Dashboard, then launch Fortnite. Recording starts by itself when the game opens.
+3. **Open ClipShot.** Recording starts by itself, for any game. Turn on **Open ClipShot with Windows** on the Home page if you want it ready every time you sign in.
 4. **Press F8** after a great moment to save the last 90 seconds.
 5. **Press F9** to start a long recording (for YouTube videos or full sessions). Press **F9** again to stop and save it. You can also use the **Start long recording** button on the Dashboard.
 6. **Press F10** to save a screenshot of the moment.
@@ -79,7 +79,7 @@ Extra options for experienced users are under **Show advanced settings**. You do
 
 **My voice isn't in clips.** Turn on **Record my microphone** in Settings → Audio, pick your mic, save, then stop and start ClipShot. If it still doesn't work, open Windows **Settings → Privacy & security → Microphone** and turn on **Let desktop apps access your microphone**.
 
-**Long recording won't start.** It starts once ClipShot is recording Fortnite, so open Fortnite first. If F9 does nothing, another app may be using that key: pick a different one in Settings.
+**Long recording won't start.** It starts once ClipShot is recording, which shows as **Recording** at the top of the Home page. If F9 does nothing, another app may be using that key: pick a different one in Settings.
 
 **An automatic clip stays in Pending.** ClipShot saved the video but couldn't confirm a trickshot from the replay, so it kept the clip to be safe. Make sure **Record Replays** is on in Fortnite. The Activity panel shows the reason.
 

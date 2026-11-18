@@ -4,7 +4,7 @@
         Title="Update available" Width="480" SizeToContent="Height"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize" WindowStyle="None"
         ShowInTaskbar="False" Background="{StaticResource PageBrush}"
-        BorderBrush="#4A2929" BorderThickness="1">
+        BorderBrush="#1F1F23" BorderThickness="1">
     <StackPanel Margin="28,24,28,24">
         <StackPanel Orientation="Horizontal">
             <Image Width="40" Height="40" Source="/Assets/clipshot-logo-transparent.png" RenderOptions.BitmapScalingMode="HighQuality"/>
@@ -17,15 +17,15 @@
         <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10"
                 Padding="16,12" Margin="0,18,0,0" MaxHeight="220">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <TextBlock x:Name="NotesText" Text="" Foreground="#E6DADA" FontSize="12.5" TextWrapping="Wrap" LineHeight="19"/>
+                <TextBlock x:Name="NotesText" Text="" Foreground="#E4E4E7" FontSize="12.5" TextWrapping="Wrap" LineHeight="19"/>
             </ScrollViewer>
         </Border>
 
-        <TextBlock x:Name="RecordingWarning" Visibility="Collapsed" Foreground="#EF5555" FontSize="12" Margin="0,12,0,0" TextWrapping="Wrap"
+        <TextBlock x:Name="RecordingWarning" Visibility="Collapsed" Foreground="#E5484D" FontSize="12" Margin="0,12,0,0" TextWrapping="Wrap"
                    Text="ClipShot is recording. Updating stops recording; your saved clips are kept."/>
 
         <StackPanel x:Name="ProgressPanel" Visibility="Collapsed" Margin="0,16,0,0">
-            <ProgressBar x:Name="DownloadProgress" Height="8" Minimum="0" Maximum="1" Foreground="{StaticResource PrimaryBrush}" Background="#2E1D1D" BorderThickness="0"/>
+            <ProgressBar x:Name="DownloadProgress" Height="8" Minimum="0" Maximum="1" Foreground="{StaticResource PrimaryBrush}" Background="#26262B" BorderThickness="0"/>
             <TextBlock x:Name="ProgressText" Text="Downloading…" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,6,0,0"/>
         </StackPanel>
 

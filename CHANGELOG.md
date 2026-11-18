@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.11
+
+- **New look.** A cleaner, darker design. The Home page shows what ClipShot is doing (recording, game sound, microphone, Fortnite) with your main buttons, recent clips, long recording, screenshots and quick on/off switches.
+- **Records any game.** ClipShot no longer waits for Fortnite: it records whatever you play. Fortnite is only needed for automatic trickshot clips and the Meter Checker. (You can still choose "Only record while Fortnite is running" in Settings.)
+- **Starts recording when it opens.** No need to click Start each time (can be turned off).
+- **Open with Windows.** New switch to open ClipShot quietly in the system tray when you sign in.
+
 ## 1.0.10
 
 - Kill streaks are now called **swag lines**, like trickshotters call them (in the app, and in screenshot names: "…_swag-lines.png").

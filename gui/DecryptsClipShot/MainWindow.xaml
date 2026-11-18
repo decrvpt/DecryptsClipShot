@@ -12,14 +12,14 @@
                     ToolTip="Double-click to watch">
                 <StackPanel>
                     <Grid Height="132">
-                        <Border Background="#281818" CornerRadius="8" ClipToBounds="True">
+                        <Border Background="#1F1F23" CornerRadius="8" ClipToBounds="True">
                             <Image Source="{Binding ThumbnailPath}" Stretch="UniformToFill"/>
                         </Border>
                         <Border Width="40" Height="40" CornerRadius="20" Background="#B0000000" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <TextBlock Text="▶" Foreground="White" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="3,0,0,0"/>
                         </Border>
-                        <Border Background="#CC140A0A" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8">
-                            <TextBlock Text="{Binding Category}" Foreground="#F0A0A0" FontSize="10" FontWeight="SemiBold"/>
+                        <Border Background="#CC0B0B0D" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8">
+                            <TextBlock Text="{Binding Category}" Foreground="#F2A3A6" FontSize="10" FontWeight="SemiBold"/>
                         </Border>
                     </Grid>
                     <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" Margin="4,11,4,0" TextTrimming="CharacterEllipsis"/>
@@ -31,7 +31,7 @@
             <Border Width="252" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Margin="0,0,16,16" Padding="10" Cursor="Hand"
                     ToolTip="Double-click to open">
                 <StackPanel>
-                    <Border Height="132" Background="#281818" CornerRadius="8" ClipToBounds="True">
+                    <Border Height="132" Background="#1F1F23" CornerRadius="8" ClipToBounds="True">
                         <Image Source="{Binding ThumbnailPath}" Stretch="UniformToFill"/>
                     </Border>
                     <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold" Margin="4,10,4,0" TextTrimming="CharacterEllipsis"/>
@@ -47,14 +47,14 @@
                             CornerRadius="0"
                             UseAeroCaptionButtons="False" />
     </shell:WindowChrome.WindowChrome>
-    <Border BorderBrush="#4A2929" BorderThickness="1" Background="{StaticResource PageBrush}">
+    <Border BorderBrush="#1F1F23" BorderThickness="1" Background="{StaticResource PageBrush}">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="42"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <Border Grid.Row="0" Background="#0F0909" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+            <Border Grid.Row="0" Background="#09090B" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
                 <Grid>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0">
                         <Image Width="24" Height="24" Source="/Assets/clipshot-logo-transparent.png" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
@@ -74,7 +74,7 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <Border Grid.Column="0" Background="{StaticResource SidebarBrush}" BorderBrush="#2C1A1A" BorderThickness="0,0,1,0">
+                <Border Grid.Column="0" Background="{StaticResource SidebarBrush}" BorderBrush="#232327" BorderThickness="0,0,1,0">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -105,7 +105,7 @@
                                 <StackPanel Orientation="Horizontal"><TextBlock Text="⚙" Width="28" FontSize="16"/><TextBlock Text="Settings"/></StackPanel>
                             </Button>
                         </StackPanel>
-                        <Border Grid.Row="2" Background="#191010" BorderBrush="#2C1A1A" BorderThickness="1" CornerRadius="10" Margin="14" Padding="14,12">
+                        <Border Grid.Row="2" Background="#141417" BorderBrush="#232327" BorderThickness="1" CornerRadius="10" Margin="14" Padding="14,12">
                             <StackPanel>
                                 <StackPanel Orientation="Horizontal">
                                     <Ellipse x:Name="SidebarStatusDot" Width="9" Height="9" Fill="#67677A" Margin="0,0,9,0" VerticalAlignment="Center"/>
@@ -121,131 +121,183 @@
                     <Grid x:Name="DashboardPanel">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
+
+                        <!-- Header: page title and live status pill. -->
                         <Grid>
                             <StackPanel>
-                                <TextBlock Text="Dashboard" FontSize="28" FontWeight="Bold"/>
-                                <TextBlock Text="Your last few minutes of Fortnite, always ready to save." Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"/>
+                                <TextBlock Text="Decrypt's ClipShot" Style="{StaticResource CardHint}" FontSize="12"/>
+                                <TextBlock Text="Home" FontSize="26" FontWeight="Bold" Margin="0,2,0,0"/>
                             </StackPanel>
-                            <Border HorizontalAlignment="Right" VerticalAlignment="Top" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="18" Padding="14,7">
+                            <Border HorizontalAlignment="Right" VerticalAlignment="Center" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="18" Padding="14,8">
                                 <StackPanel Orientation="Horizontal">
-                                    <Ellipse x:Name="HeaderStatusDot" Width="9" Height="9" Fill="#67677A" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="HeaderStatusText" Text="Off" FontSize="12" FontWeight="SemiBold"/>
+                                    <Ellipse x:Name="HeaderStatusDot" Width="8" Height="8" Fill="#67677A" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="HeaderStatusText" Text="Off" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    <Border Width="1" Height="14" Background="{StaticResource BorderBrush}" Margin="12,0"/>
+                                    <TextBlock x:Name="HeaderHotkeysText" Text="F8 clip  ·  F9 long  ·  F10 screenshot" Style="{StaticResource CardHint}" FontSize="12" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </Border>
                         </Grid>
 
-                        <!-- Main control: one big button to start, one to save. -->
-                        <Border Grid.Row="1" CornerRadius="16" Padding="28,24" Margin="0,22,0,18" BorderBrush="#4A2424" BorderThickness="1">
-                            <Border.Background>
-                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                    <GradientStop Color="#2A1212" Offset="0"/>
-                                    <GradientStop Color="#160E0E" Offset="1"/>
-                                </LinearGradientBrush>
-                            </Border.Background>
+                        <ScrollViewer Grid.Row="1" Margin="0,18,0,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                             <Grid>
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <StackPanel VerticalAlignment="Center">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Border Background="#3A1212" CornerRadius="14" Width="54" Height="54">
-                                            <TextBlock Text="◉" FontSize="28" Foreground="#E04C4C" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                        <StackPanel Margin="16,2,0,0" VerticalAlignment="Center">
-                                            <TextBlock x:Name="CaptureStateText" Text="ClipShot is off" FontSize="21" FontWeight="SemiBold"/>
-                                            <TextBlock x:Name="CaptureSubtext" Text="Click Start ClipShot, then launch Fortnite" Foreground="{StaticResource MutedBrush}" FontSize="13" Margin="0,4,0,0"/>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="1.6*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <!-- Welcome card: who, what's happening, the main actions. -->
+                                <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource Card}" Padding="24,22" Margin="0,0,12,12">
+                                    <Border.Background>
+                                        <RadialGradientBrush Center="0.85,0.15" GradientOrigin="0.85,0.15" RadiusX="0.9" RadiusY="1.1">
+                                            <GradientStop Color="#2A1517" Offset="0"/>
+                                            <GradientStop Color="#141417" Offset="0.65"/>
+                                        </RadialGradientBrush>
+                                    </Border.Background>
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="*"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        <StackPanel>
+                                            <TextBlock x:Name="CaptureStateText" Text="ClipShot is off" FontSize="24" FontWeight="Bold"/>
+                                            <TextBlock x:Name="FpsMetric" Visibility="Collapsed"/>
+                                            <TextBlock x:Name="QualityMetric" Visibility="Collapsed"/>
+                                            <TextBlock x:Name="ClipLengthMetric" Visibility="Collapsed"/>
+                                            <TextBlock x:Name="CaptureSubtext" Text="Click Start ClipShot to begin recording" Style="{StaticResource CardHint}" FontSize="12" Margin="0,3,0,0" TextWrapping="Wrap"/>
                                         </StackPanel>
-                                    </StackPanel>
-                                    <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
-                                        <TextBlock x:Name="ElapsedText" Text="00:00:00" FontSize="40" FontWeight="Light"/>
-                                        <TextBlock Text="recording time" Foreground="{StaticResource MutedBrush}" FontSize="12" VerticalAlignment="Bottom" Margin="12,0,0,10"/>
-                                    </StackPanel>
-                                    <Border x:Name="LongRecordBadge" Visibility="Collapsed" Background="#33EF5555" CornerRadius="8" Padding="12,6" Margin="0,10,0,0" HorizontalAlignment="Left">
-                                        <StackPanel Orientation="Horizontal">
-                                            <Ellipse Width="9" Height="9" Fill="#EF5555" VerticalAlignment="Center"/>
-                                            <TextBlock x:Name="LongRecordText" Text="Long recording 00:00:00" Margin="8,0,0,0" FontWeight="SemiBold"/>
+
+                                        <!-- Status list, like a system overview. -->
+                                        <StackPanel Grid.Row="1" Margin="0,18,0,0">
+                                            <Grid Margin="0,0,0,8">
+                                                <StackPanel Orientation="Horizontal"><Ellipse x:Name="RecStatusDot" Width="7" Height="7" Fill="#67677A" VerticalAlignment="Center"/><TextBlock Text="Recording" FontSize="12.5" Margin="10,0,0,0"/></StackPanel>
+                                                <TextBlock x:Name="RecStatusValue" Text="Off" Style="{StaticResource CardHint}" FontSize="12" HorizontalAlignment="Right"/>
+                                            </Grid>
+                                            <Grid Margin="0,0,0,8">
+                                                <StackPanel Orientation="Horizontal"><Ellipse x:Name="GameAudioStatusDot" Width="7" Height="7" Fill="#67677A" VerticalAlignment="Center"/><TextBlock Text="Game sound" FontSize="12.5" Margin="10,0,0,0"/></StackPanel>
+                                                <TextBlock x:Name="GameAudioStatusValue" Text="Off" Style="{StaticResource CardHint}" FontSize="12" HorizontalAlignment="Right"/>
+                                            </Grid>
+                                            <Grid Margin="0,0,0,8">
+                                                <StackPanel Orientation="Horizontal"><Ellipse x:Name="MicStatusDot" Width="7" Height="7" Fill="#67677A" VerticalAlignment="Center"/><TextBlock Text="Microphone" FontSize="12.5" Margin="10,0,0,0"/></StackPanel>
+                                                <TextBlock x:Name="MicStatusValue" Text="Off" Style="{StaticResource CardHint}" FontSize="12" HorizontalAlignment="Right"/>
+                                            </Grid>
+                                            <Grid>
+                                                <StackPanel Orientation="Horizontal"><Ellipse x:Name="FortniteStatusDot" Width="7" Height="7" Fill="#67677A" VerticalAlignment="Center"/><TextBlock Text="Fortnite" FontSize="12.5" Margin="10,0,0,0"/></StackPanel>
+                                                <TextBlock x:Name="FortniteStatusValue" Text="Not running" Style="{StaticResource CardHint}" FontSize="12" HorizontalAlignment="Right" ToolTip="Fortnite is only needed for automatic trickshot clips and the Meter Checker. Everything else works with any game."/>
+                                            </Grid>
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Row="2" VerticalAlignment="Bottom" Margin="0,18,0,0">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock x:Name="ElapsedText" Text="00:00:00" FontSize="34" FontWeight="Light"/>
+                                                <TextBlock Text="recording time" Style="{StaticResource CardHint}" FontSize="12" VerticalAlignment="Bottom" Margin="10,0,0,8"/>
+                                            </StackPanel>
+                                            <Border x:Name="LongRecordBadge" Visibility="Collapsed" Background="#33E5484D" CornerRadius="8" Padding="12,6" Margin="0,8,0,0" HorizontalAlignment="Left">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Ellipse Width="8" Height="8" Fill="#E5484D" VerticalAlignment="Center"/>
+                                                    <TextBlock x:Name="LongRecordText" Text="Long recording 00:00:00" Margin="8,0,0,0" FontWeight="SemiBold"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
+
+                                        <Grid Grid.Row="3" Margin="0,18,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                            <Button x:Name="EngineButton" Content="Start ClipShot" Style="{StaticResource PrimaryButton}" Padding="16,12" Click="EngineButton_Click"/>
+                                            <Button x:Name="SaveClipButton" Grid.Column="2" Style="{StaticResource SecondaryButton}" Padding="16,12" Click="SaveClip_Click" IsEnabled="False">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="Save clip" VerticalAlignment="Center"/>
+                                                    <Border Background="#26262B" CornerRadius="5" Padding="6,1" Margin="10,0,0,0">
+                                                        <TextBlock x:Name="HotkeyMetric" Text="F8" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
+                                                    </Border>
+                                                </StackPanel>
+                                            </Button>
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+
+                                <!-- Recent clips / activity. -->
+                                <Border Grid.Row="1" Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,12,0" Height="260">
+                                    <Grid>
+                                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                                        <Grid>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Button x:Name="RecentTabButton" Content="Recent clips" Style="{StaticResource LinkButton}" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" Click="RecentTab_Click"/>
+                                                <Button x:Name="ActivityTabButton" Content="Activity" Style="{StaticResource LinkButton}" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" Margin="18,0,0,0" Click="ActivityTab_Click"/>
+                                            </StackPanel>
+                                            <Button x:Name="RecentSideButton" Content="See all →" Style="{StaticResource LinkButton}" HorizontalAlignment="Right" VerticalAlignment="Center" Click="ClipsNav_Click"/>
+                                            <Button x:Name="ActivitySideButton" Content="Clear" Style="{StaticResource LinkButton}" HorizontalAlignment="Right" VerticalAlignment="Center" Click="ClearActivity_Click" Visibility="Collapsed"/>
+                                        </Grid>
+                                        <Grid x:Name="RecentClipsPanel" Grid.Row="1">
+                                            <ListBox x:Name="RecentClipsList" Margin="0,10,0,0" Background="Transparent" BorderThickness="0" Foreground="White" MouseDoubleClick="ClipList_MouseDoubleClick">
+                                                <ListBox.ItemTemplate><DataTemplate><Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Width="64" Height="36" Background="#1F1F23" CornerRadius="6" ClipToBounds="True"><Image Source="{Binding ThumbnailPath}" Stretch="UniformToFill"/></Border><StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center"><TextBlock Text="{Binding Title}" FontSize="13" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding Details}" Foreground="{StaticResource MutedBrush}" FontSize="11"/></StackPanel></Grid></DataTemplate></ListBox.ItemTemplate>
+                                            </ListBox>
+                                            <!-- Shown until the first clip exists. -->
+                                            <StackPanel Margin="0,14,0,0">
+                                                <StackPanel.Style>
+                                                    <Style TargetType="StackPanel">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding HasItems, ElementName=RecentClipsList}" Value="False">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </StackPanel.Style>
+                                                <TextBlock Text="Get your first clip" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                                                <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12.5" Margin="0,0,0,7"><Run Text="1" Foreground="#E5484D" FontWeight="Bold"/><Run Text="   ClipShot records in the background while you play"/></TextBlock>
+                                                <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12.5" Margin="0,0,0,7"><Run Text="2" Foreground="#E5484D" FontWeight="Bold"/><Run Text="   Press your clip shortcut after a great moment"/></TextBlock>
+                                                <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12.5"><Run Text="3" Foreground="#E5484D" FontWeight="Bold"/><Run Text="   Fortnite trickshots are clipped for you automatically"/></TextBlock>
+                                            </StackPanel>
+                                        </Grid>
+                                        <ListBox x:Name="ActivityList" Grid.Row="1" Margin="0,10,0,0" Background="Transparent" BorderThickness="0" Foreground="{StaticResource MutedBrush}" FontSize="11.5" Visibility="Collapsed"/>
+                                    </Grid>
+                                </Border>
+
+                                <!-- Long recording and screenshots. -->
+                                <StackPanel Grid.Row="1" Grid.Column="1">
+                                    <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                                        <StackPanel>
+                                            <Grid>
+                                                <TextBlock Text="Long recording" Style="{StaticResource CardLabel}"/>
+                                                <TextBlock x:Name="LongHotkeyMetric" Text="F9" Style="{StaticResource CardHint}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                            </Grid>
+                                            <TextBlock Text="Record everything until you stop, for YouTube videos" Style="{StaticResource CardHint}" Margin="0,3,0,12" TextWrapping="Wrap"/>
+                                            <Button x:Name="LongRecordButton" Content="Start long recording" Style="{StaticResource SecondaryButton}" Padding="14,9" Click="LongRecord_Click" IsEnabled="False"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Style="{StaticResource Card}">
+                                        <StackPanel>
+                                            <Grid>
+                                                <TextBlock Text="Screenshots" Style="{StaticResource CardLabel}"/>
+                                                <TextBlock x:Name="ShotHotkeyMetric" Text="F10" Style="{StaticResource CardHint}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                            </Grid>
+                                            <TextBlock x:Name="ScreenshotCountText" Text="Saved in your Pictures folder" Style="{StaticResource CardHint}" Margin="0,3,0,12" TextWrapping="Wrap"/>
+                                            <Button Content="View screenshots" Style="{StaticResource SecondaryButton}" Padding="14,9" Click="ScreenshotsNav_Click"/>
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="20,0,0,0">
-                                    <Button x:Name="EngineButton" Content="Start ClipShot" ToolTip="Start recording" MinWidth="210" Padding="24,15" FontSize="16" Style="{StaticResource PrimaryButton}" Click="EngineButton_Click"/>
-                                    <Button x:Name="SaveClipButton" Content="Save clip now" Style="{StaticResource SecondaryButton}" MinWidth="210" Padding="24,11" Margin="0,10,0,0" Click="SaveClip_Click" IsEnabled="False"/>
-                                    <Button x:Name="LongRecordButton" Content="Start long recording" ToolTip="Record everything until you stop, for YouTube videos and longer sessions" Style="{StaticResource SecondaryButton}" MinWidth="210" Padding="24,11" Margin="0,10,0,0" Click="LongRecord_Click" IsEnabled="False"/>
-                                </StackPanel>
+
+                                <!-- Quick settings switches. -->
+                                <Border Grid.Row="0" Grid.Column="1" Style="{StaticResource Card}" Margin="0,0,0,12">
+                                    <StackPanel>
+                                        <TextBlock Text="Quick settings" Style="{StaticResource CardLabel}" Margin="0,0,0,14"/>
+                                        <CheckBox x:Name="QuickStartOnOpenSwitch" Content="Start recording when ClipShot opens" Style="{StaticResource SwitchToggle}" Margin="0,0,0,12" Click="QuickSwitch_Click"/>
+                                        <CheckBox x:Name="QuickWindowsSwitch" Content="Open ClipShot with Windows" Style="{StaticResource SwitchToggle}" Margin="0,0,0,12" Click="QuickSwitch_Click"/>
+                                        <CheckBox x:Name="QuickTrickshotSwitch" Content="Clip Fortnite trickshots automatically" Style="{StaticResource SwitchToggle}" Margin="0,0,0,12" Click="QuickSwitch_Click"/>
+                                        <CheckBox x:Name="QuickScreenshotSwitch" Content="Trickshot screenshots" Style="{StaticResource SwitchToggle}" Margin="0,0,0,12" Click="QuickSwitch_Click"/>
+                                        <CheckBox x:Name="QuickMicSwitch" Content="Record microphone" Style="{StaticResource SwitchToggle}" Margin="0,0,0,10" Click="QuickSwitch_Click"/>
+                                        <Button Content="All settings →" Style="{StaticResource LinkButton}" HorizontalAlignment="Left" Click="SettingsNav_Click"/>
+                                    </StackPanel>
+                                </Border>
                             </Grid>
-                        </Border>
-
-                        <Grid Grid.Row="2" Margin="0,0,0,18">
-                            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                            <Border Grid.Column="0" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="18" Margin="0,0,9,0">
-                                <StackPanel>
-                                    <TextBlock Text="SAVE A CLIP" Foreground="{StaticResource MutedBrush}" FontSize="10" FontWeight="Bold"/>
-                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                        <Border Background="#2A1818" BorderBrush="#5A3030" BorderThickness="1,1,1,3" CornerRadius="6" Padding="10,2">
-                                            <TextBlock x:Name="HotkeyMetric" Text="F8" FontSize="18" FontWeight="SemiBold"/>
-                                        </Border>
-                                        <TextBlock Text="works in game" Foreground="{StaticResource MutedBrush}" FontSize="12" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                                    </StackPanel>
-                                </StackPanel>
-                            </Border>
-                            <Border Grid.Column="1" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="18" Margin="4,0">
-                                <StackPanel><TextBlock Text="CLIP LENGTH" Foreground="{StaticResource MutedBrush}" FontSize="10" FontWeight="Bold"/><TextBlock x:Name="ClipLengthMetric" Text="90 seconds" FontSize="21" FontWeight="SemiBold" Margin="0,8,0,0"/></StackPanel>
-                            </Border>
-                            <Border Grid.Column="2" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="18" Margin="9,0,0,0">
-                                <StackPanel>
-                                    <TextBlock Text="RECORDING" Foreground="{StaticResource MutedBrush}" FontSize="10" FontWeight="Bold"/>
-                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                        <TextBlock x:Name="FpsMetric" Text="60 FPS" FontSize="21" FontWeight="SemiBold"/>
-                                        <TextBlock x:Name="QualityMetric" Text="Balanced" Foreground="{StaticResource MutedBrush}" FontSize="13" VerticalAlignment="Bottom" Margin="10,0,0,3"/>
-                                    </StackPanel>
-                                </StackPanel>
-                            </Border>
-                        </Grid>
-
-                        <Grid Grid.Row="3">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="1.5*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                            <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="18" Margin="0,0,9,0">
-                                <Grid>
-                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                                    <Grid>
-                                        <TextBlock Text="Recent clips" FontSize="15" FontWeight="SemiBold"/>
-                                        <Button Content="See all clips →" Style="{StaticResource LinkButton}" HorizontalAlignment="Right" VerticalAlignment="Center" Click="ClipsNav_Click"/>
-                                    </Grid>
-                                    <ListBox x:Name="RecentClipsList" Grid.Row="1" Margin="0,10,0,0" Background="Transparent" BorderThickness="0" Foreground="White" MouseDoubleClick="ClipList_MouseDoubleClick">
-                                        <ListBox.ItemTemplate><DataTemplate><Grid Margin="0,5"><Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Width="64" Height="38" Background="#2C1A1A" CornerRadius="6" ClipToBounds="True"><Image Source="{Binding ThumbnailPath}" Stretch="UniformToFill"/></Border><StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center"><TextBlock Text="{Binding Title}" FontSize="13" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding Details}" Foreground="{StaticResource MutedBrush}" FontSize="11"/></StackPanel></Grid></DataTemplate></ListBox.ItemTemplate>
-                                    </ListBox>
-                                    <!-- Shown until the first clip exists. -->
-                                    <StackPanel Grid.Row="1" Margin="0,14,0,0">
-                                        <StackPanel.Style>
-                                            <Style TargetType="StackPanel">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding HasItems, ElementName=RecentClipsList}" Value="False">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </StackPanel.Style>
-                                        <TextBlock Text="Get your first clip in 3 steps" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                                        <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12.5" Margin="0,0,0,7"><Run Text="1" Foreground="#EF5555" FontWeight="Bold"/><Run Text="   Click Start ClipShot above"/></TextBlock>
-                                        <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12.5" Margin="0,0,0,7"><Run Text="2" Foreground="#EF5555" FontWeight="Bold"/><Run Text="   Launch Fortnite and play"/></TextBlock>
-                                        <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12.5"><Run Text="3" Foreground="#EF5555" FontWeight="Bold"/><Run Text="   Press your clip shortcut after a great moment"/></TextBlock>
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
-                            <Border Grid.Column="1" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="18" Margin="9,0,0,0">
-                                <Grid>
-                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                                    <Grid>
-                                        <TextBlock Text="Activity" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                        <Button Content="Clear" Style="{StaticResource LinkButton}" HorizontalAlignment="Right" VerticalAlignment="Center" Click="ClearActivity_Click"/>
-                                    </Grid>
-                                    <ListBox x:Name="ActivityList" Grid.Row="1" Margin="0,10,0,0" Background="Transparent" BorderThickness="0" Foreground="{StaticResource MutedBrush}" FontSize="11"/>
-                                </Grid>
-                            </Border>
-                        </Grid>
+                        </ScrollViewer>
                     </Grid>
 
                     <Grid x:Name="ClipsPanel" Visibility="Collapsed">
@@ -257,7 +309,7 @@
                         <ScrollViewer Grid.Row="1" Margin="0,22,0,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                             <StackPanel>
                                 <StackPanel Margin="0,0,0,10">
-                                    <TextBlock Text="Trickshots" FontSize="18" FontWeight="SemiBold" Foreground="#E06A6A"/>
+                                    <TextBlock Text="Trickshots" FontSize="18" FontWeight="SemiBold" Foreground="#F07178"/>
                                     <TextBlock Text="Wins where your final kill used a sniper or heavy-ammo weapon, found automatically and titled with the distance." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,0"/>
                                 </StackPanel>
                                 <ListBox x:Name="TrickshotClipsList" Background="Transparent" BorderThickness="0" SelectionChanged="ClipList_SelectionChanged" MouseDoubleClick="ClipList_MouseDoubleClick" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled" ItemTemplate="{StaticResource ClipCardTemplate}">
@@ -329,7 +381,7 @@
                                     <Button Grid.Column="1" Content="Choose replay" Style="{StaticResource SecondaryButton}" Click="BrowseReplay_Click" Margin="10,0,0,0"/>
                                     <Button x:Name="AnalyzeReplayButton" Grid.Column="2" Content="Analyze" Style="{StaticResource PrimaryButton}" Click="AnalyzeReplay_Click" Margin="8,0,0,0"/>
                                 </Grid>
-                                <TextBlock x:Name="ReplayAnalysisStatusText" Text="Select a .replay file to begin." Foreground="#C99A9A" FontSize="11" Margin="0,11,0,0" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="ReplayAnalysisStatusText" Text="Select a .replay file to begin." Foreground="#A1A1AA" FontSize="11" Margin="0,11,0,0" TextWrapping="Wrap"/>
                             </StackPanel>
                         </Border>
 
@@ -341,13 +393,13 @@
                             <Border x:Name="FinalKillCard" Grid.Column="0" Margin="0,0,8,0" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="22,18">
                                 <StackPanel>
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                        <TextBlock Text="◎" Foreground="#EF5555" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                                        <TextBlock Text="Final Kill" Foreground="#EF5555" FontSize="17" FontWeight="Bold" VerticalAlignment="Center"/>
+                                        <TextBlock Text="◎" Foreground="#E5484D" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="Final Kill" Foreground="#E5484D" FontSize="17" FontWeight="Bold" VerticalAlignment="Center"/>
                                     </StackPanel>
                                     <Border Padding="0,9" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
                                         <Grid>
                                             <TextBlock Text="Distance" Foreground="{StaticResource MutedBrush}" FontSize="13"/>
-                                            <TextBlock x:Name="FinalKillDistanceText" Text="—" FontWeight="SemiBold" Foreground="#EF5555" FontSize="13" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" Margin="90,0,0,0" TextAlignment="Right"/>
+                                            <TextBlock x:Name="FinalKillDistanceText" Text="—" FontWeight="SemiBold" Foreground="#E5484D" FontSize="13" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" Margin="90,0,0,0" TextAlignment="Right"/>
                                         </Grid>
                                     </Border>
                                     <Border Padding="0,9" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
@@ -390,13 +442,13 @@
                             <Border x:Name="FurthestKillCard" Grid.Column="1" Margin="8,0,0,0" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="22,18">
                                 <StackPanel>
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                        <TextBlock Text="↗" Foreground="#EF5555" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                                        <TextBlock Text="Furthest Kill" Foreground="#EF5555" FontSize="17" FontWeight="Bold" VerticalAlignment="Center"/>
+                                        <TextBlock Text="↗" Foreground="#E5484D" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="Furthest Kill" Foreground="#E5484D" FontSize="17" FontWeight="Bold" VerticalAlignment="Center"/>
                                     </StackPanel>
                                     <Border Padding="0,9" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
                                         <Grid>
                                             <TextBlock Text="Distance" Foreground="{StaticResource MutedBrush}" FontSize="13"/>
-                                            <TextBlock x:Name="FurthestKillDistanceText" Text="—" FontWeight="SemiBold" Foreground="#EF5555" FontSize="13" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" Margin="90,0,0,0" TextAlignment="Right"/>
+                                            <TextBlock x:Name="FurthestKillDistanceText" Text="—" FontWeight="SemiBold" Foreground="#E5484D" FontSize="13" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" Margin="90,0,0,0" TextAlignment="Right"/>
                                         </Grid>
                                     </Border>
                                     <Border Padding="0,9" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
@@ -482,7 +534,7 @@
                                     </DockPanel>
                                     <Slider x:Name="PostMatchSlider" Style="{StaticResource DarkSlider}" Minimum="0" Maximum="60" TickFrequency="5" SmallChange="5" LargeChange="10" Value="15" ValueChanged="PostMatchSlider_ValueChanged"/>
 
-                                    <TextBlock x:Name="PerformanceStatusText" Text="Hardware encoding and 1080p capture are recommended while gaming." Foreground="#C99A9A" FontSize="11" Margin="0,14,0,0" TextWrapping="Wrap"/>
+                                    <TextBlock x:Name="PerformanceStatusText" Text="Hardware encoding and 1080p capture are recommended while gaming." Foreground="#A1A1AA" FontSize="11" Margin="0,14,0,0" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
 
@@ -530,7 +582,7 @@
                                         <Slider x:Name="MicVolumeSlider" Style="{StaticResource DarkSlider}" Minimum="0" Maximum="200" TickFrequency="5" SmallChange="5" LargeChange="25" Value="100" ValueChanged="VolumeSlider_ValueChanged"/>
                                         <TextBlock Text="Your voice is mixed into the clip with the game sound. Windows may ask you to allow microphone access." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,8,0,0" TextWrapping="Wrap"/>
                                     </StackPanel>
-                                    <TextBlock x:Name="AudioDeviceStatusText" Text="Scanning Windows playback devices..." Foreground="#C99A9A" FontSize="11" Margin="0,14,0,0" TextWrapping="Wrap"/>
+                                    <TextBlock x:Name="AudioDeviceStatusText" Text="Scanning Windows playback devices..." Foreground="#A1A1AA" FontSize="11" Margin="0,14,0,0" TextWrapping="Wrap"/>
                                     
                                 </StackPanel>
                             </Border>
@@ -546,7 +598,10 @@
                                     <Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="ShotHotkeyBox" Style="{StaticResource InputStyle}" IsReadOnly="True"/><Button x:Name="ShotHotkeyCaptureButton" Grid.Column="1" Content="Set shortcut" Style="{StaticResource SecondaryButton}" Click="CaptureShotHotkey_Click" Margin="10,0,0,0"/></Grid>
                                     <CheckBox x:Name="TrickshotScreenshotCheck" Content="Save a screenshot of every trickshot automatically" Foreground="White" Margin="0,0,0,4"/>
                                     <TextBlock Text="Saves one picture with the swag lines and one with the damage number." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="22,0,0,12" TextWrapping="Wrap"/>
-                                    <CheckBox x:Name="FortniteOnlyCheck" Content="Start recording only when Fortnite is running" Foreground="White" Margin="0,4"/>
+                                    <CheckBox x:Name="StartOnOpenCheck" Content="Start recording when ClipShot opens" Foreground="White" Margin="0,4"/>
+                                    <CheckBox x:Name="StartWithWindowsCheck" Content="Open ClipShot when Windows starts (in the system tray)" Foreground="White" Margin="0,4"/>
+                                    <CheckBox x:Name="FortniteOnlyCheck" Content="Only record while Fortnite is running" Foreground="White" Margin="0,4"/>
+                                    <TextBlock Text="Off: ClipShot records whatever you play. Fortnite trickshot clips and the Meter Checker work either way." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="22,0,0,8" TextWrapping="Wrap"/>
                                     <CheckBox x:Name="LocalReplayCheck" Content="Check each match for trickshots automatically" Foreground="White" Margin="0,8,0,4"/>
                                     <TextBlock Text="After a win, ClipShot checks the final kill and keeps the clip if it was a trickshot." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="22,0,0,5" TextWrapping="Wrap"/>
                                     <CheckBox x:Name="KeepRejectedCheck" Content="Keep clips that do not qualify" Foreground="White" Margin="0,4"/>
@@ -564,7 +619,7 @@
                             <Button x:Name="AdvancedToggle" Content="Show advanced settings ▾" Click="AdvancedToggle_Click" HorizontalAlignment="Left" Margin="2,0,0,14" Cursor="Hand">
                                 <Button.Template>
                                     <ControlTemplate TargetType="Button">
-                                        <TextBlock Text="{TemplateBinding Content}" Foreground="#E06A6A" FontSize="13" Background="Transparent"/>
+                                        <TextBlock Text="{TemplateBinding Content}" Foreground="#F07178" FontSize="13" Background="Transparent"/>
                                     </ControlTemplate>
                                 </Button.Template>
                             </Button>

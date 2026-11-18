@@ -309,7 +309,9 @@ static void load_config(AppConfig *config)
     config->clip_seconds = load_ini_int(ini, L"recording", L"clip_seconds", 90);
     config->replay_stable_seconds = load_ini_int(ini, L"app", L"replay_stable_seconds", 15);
     config->post_match_seconds = load_ini_int(ini, L"app", L"post_match_seconds", 15);
-    config->start_only_with_fortnite = load_ini_int(ini, L"app", L"start_only_with_fortnite", 1);
+    /* ClipShot records whatever is on screen; waiting for Fortnite is optional.
+       Fortnite replays still drive automatic trickshot clips either way. */
+    config->start_only_with_fortnite = load_ini_int(ini, L"app", L"start_only_with_fortnite", 0);
     config->keep_rejected_clips = load_ini_int(ini, L"app", L"keep_rejected_clips", 1);
     config->auto_screenshot = load_ini_int(ini, L"app", L"trickshot_screenshot", 1);
     config->local_replay_enabled = load_ini_int(ini, L"local_replay", L"enabled", 1);
@@ -2143,7 +2145,7 @@ static void long_record_start(const AppConfig *config, const Recorder *recorder,
     if (lr->active) return;
     if (!recorder->running) {
         wprintf(L"LONG|unavailable\n");
-        wprintf(L"Long recording starts once ClipShot is recording Fortnite.\n");
+        wprintf(L"Long recording starts once ClipShot is recording.\n");
         return;
     }
     ZeroMemory(lr, sizeof(*lr));
