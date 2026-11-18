@@ -107,7 +107,11 @@
       "class": "Sniper Rifle",
       "ammo": "Heavy",
       "sniper": true,
-      "source": "Icon asset T-Icon-Weapons-SK-50cal-Barret-Sniper (Blitz.gg)."
+      "source": "Icon asset T-Icon-Weapons-SK-50cal-Barret-Sniper (Blitz.gg).",
+      "rarities": [
+        "Epic",
+        "Legendary"
+      ]
     },
     {
       "name": "Suppressed Sniper Rifle",

@@ -142,6 +142,7 @@ internal static class Program
         string[] tags = ReadKillTags(finalKill, victimData);
         string rarity = KillRarity(tags, finalKill, victimData);
         WeaponResult weapon = WeaponCatalog.Resolve(tags, rarity, ReadMember(finalKill, "DeathCause"));
+        rarity = CheckRarity(rarity, weapon);
         // Automatic trickshots count any sniper OR any heavy-ammo weapon
         // (Usopp's Slingshot, Flint-Knock Pistol, ...). Known weapons use
         // weapons.json; unknown ones fall back to tag keywords.
@@ -266,6 +267,7 @@ internal static class Program
         string[] tags = ReadKillTags(best, victimData);
         string rarity = KillRarity(tags, best, victimData);
         WeaponResult weapon = WeaponCatalog.Resolve(tags, rarity, ReadMember(best, "DeathCause"));
+        rarity = CheckRarity(rarity, weapon);
         bool furthestSniper = weapon.IsSniper || (!weapon.Known && tags.Any(IsSniperTag));
         return new KillDetails(
             best.Distance ?? 0,
@@ -654,14 +656,31 @@ internal static class Program
         tag.Contains("hunting.rifle", StringComparison.OrdinalIgnoreCase) ||
         tag.Contains("hunting rifle", StringComparison.OrdinalIgnoreCase);
 
+    // A rarity only counts when a tag names it as a whole word
+    // ("Item.Rarity.Epic"), not when the letters appear inside another word.
     private static string ExtractRarity(IEnumerable<string> tags)
     {
         string[] rarities = ["Mythic", "Exotic", "Legendary", "Epic", "Rare", "Uncommon", "Common"];
+        string[][] words = tags
+            .Select(tag => tag.Split(['.', '_', '-', ' ', '/', ':'], StringSplitOptions.RemoveEmptyEntries))
+            .ToArray();
         foreach (string rarity in rarities)
         {
-            if (tags.Any(tag => tag.Contains(rarity, StringComparison.OrdinalIgnoreCase)))
+            if (words.Any(parts => parts.Any(part => part.Equals(rarity, StringComparison.OrdinalIgnoreCase))))
                 return rarity;
         }
         return "Unknown";
+    }
+
+    // Weapons that only come in certain rarities (weapons.json "rarities") never
+    // show one they don't come in. If the replay doesn't say which, the possible
+    // ones are shown ("Epic or Legendary").
+    private static string CheckRarity(string rarity, WeaponResult weapon)
+    {
+        string[] allowed = weapon.Rarities ?? [];
+        if (allowed.Length == 0) return rarity;
+        string? match = allowed.FirstOrDefault(r => r.Equals(rarity, StringComparison.OrdinalIgnoreCase));
+        if (match is not null) return match;
+        return allowed.Length == 1 ? allowed[0] : string.Join(" or ", allowed);
     }
 }

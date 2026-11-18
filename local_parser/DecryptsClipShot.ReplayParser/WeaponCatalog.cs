@@ -12,7 +12,8 @@ internal sealed record WeaponEntry(
     string Ammo,
     bool Sniper,
     bool HasScope,
-    string? Source);
+    string? Source,
+    string[] Rarities);
 
 /// <summary>What the parser decided about a kill's weapon.</summary>
 internal sealed record WeaponResult(
@@ -22,7 +23,8 @@ internal sealed record WeaponResult(
     bool IsHeavyAmmo,
     bool Known,
     string? TagKey,
-    bool HasScope = true);
+    bool HasScope = true,
+    string[]? Rarities = null);
 
 /// <summary>
 /// Turns Fortnite's weapon tags into the names players know.
@@ -117,7 +119,12 @@ internal static class WeaponCatalog
                 Text("ammo"),
                 weapon.TryGetProperty("sniper", out JsonElement sniper) && sniper.ValueKind == JsonValueKind.True,
                 !(weapon.TryGetProperty("scope", out JsonElement scope) && scope.ValueKind == JsonValueKind.False),
-                Text("source"));
+                Text("source"),
+                // Optional: the rarities this weapon actually comes in, so a stray
+                // rarity word in the replay can't label it with an impossible one.
+                weapon.TryGetProperty("rarities", out JsonElement rarities) && rarities.ValueKind == JsonValueKind.Array
+                    ? rarities.EnumerateArray().Select(r => r.GetString() ?? "").Where(r => r.Length > 0).ToArray()
+                    : []);
         }
     }
 
@@ -150,7 +157,7 @@ internal static class WeaponCatalog
                     ? best.MythicName
                     : best.Name;
                 return new WeaponResult(name, best.Class, best.Sniper,
-                    best.Ammo.Equals("Heavy", StringComparison.OrdinalIgnoreCase), true, key, best.HasScope);
+                    best.Ammo.Equals("Heavy", StringComparison.OrdinalIgnoreCase), true, key, best.HasScope, best.Rarities);
             }
 
             // Not in the table yet: show the class only, never the codename words.

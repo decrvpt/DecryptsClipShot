@@ -1,93 +1,21 @@
 # Changelog
 
-## 1.0.11
-
-- **New look.** A cleaner, darker design. The Home page shows what ClipShot is doing (recording, game sound, microphone, Fortnite) with your main buttons, recent clips, long recording, screenshots and quick on/off switches.
-- **Records any game.** ClipShot no longer waits for Fortnite: it records whatever you play. Fortnite is only needed for automatic trickshot clips and the Meter Checker. (You can still choose "Only record while Fortnite is running" in Settings.)
-- **Starts recording when it opens.** No need to click Start each time (can be turned off).
-- **Open with Windows.** New switch to open ClipShot quietly in the system tray when you sign in.
-
-## 1.0.10
-
-- Kill streaks are now called **swag lines**, like trickshotters call them (in the app, and in screenshot names: "…_swag-lines.png").
-- Fireworks after a Victory Royale are no longer mistaken for damage numbers (a damage number is a short row of digits on its own, not part of a burst of bright pieces). ClipShot also searches a wider stretch of the clip for the kill, and looks for swag lines across that whole stretch if none show up right after the damage number.
-- The log now records, once a minute, how much CPU and memory each part of the recorder uses, to spot slowdowns in long sessions.
-- The rolling buffer (the last few minutes ClipShot keeps ready to save) is now deleted when you stop ClipShot, freeing several hundred MB, and cleared when recording starts, so footage from an earlier session can never end up in a new clip.
-
-## 1.0.9
-
-- **Trickshot screenshots work in snowy areas.** Edges of snow against dark ground looked like kill streaks, so ClipShot sometimes saved a frame from before the kill. Kill streaks are now recognized as long, thin lines that point outward from the middle of the screen with darker scenery on both sides; snow edges only have one dark side. In testing, snow scores about 20 and real streaks over 400.
-- ClipShot now finds the damage number first (nothing else looks like it, snow included), then looks for the kill streaks in the seconds right after the hit.
-
-## 1.0.8
-
-- **Steadier sound sync in clips.** The sound and video recorders now note exactly where every recorded piece sits in time, and each clip's sound is lined up from those notes. Before, the match-up was estimated at the moment you saved, from progress reports that vary by up to a tenth of a second, so the sync wobbled from clip to clip. The old method is still used as a backup, for example right after the sound recorder restarts.
-
-## 1.0.7
-
-- **Fixed the sound slowly drifting ahead of the video.** Headsets and sound cards run on their own clock, often a tiny bit fast. ClipShot only corrected big jumps, so a fast clock added up to over a tenth of a second after 10–15 minutes. It now keeps the sound within about 5 ms of real time for the whole session, by quietly dropping or repeating single samples you can't hear.
-- **Damage number screenshots fixed.** ClipShot now recognizes damage numbers by their shape (a row of bold digits with a sharp edge) in every color and size, any 2- or 3-digit value, so the Victory Royale sparkles and streaks are no longer mistaken for them. It looks for the number in the moments before the victory camera, when the hit happens. If no number is found, no damage screenshot is saved, instead of a duplicate of the streaks picture.
-
-## 1.0.6
-
-- **Two trickshot screenshots:** one where the kill streaks are strongest, and one where the damage number is clearest (they're rarely at their best in the same frame). Kills on bots get only the damage-number picture, since bots don't get kill streaks. Damage numbers are recognized in every color: blue (shield, including headshots on shields), yellow (headshot) and white (health).
-- Fixed trickshot screenshots that showed a loading screen. ClipShot now uses the replay to find exactly when the final kill happened and only looks there, instead of searching the end of the clip (which can be the lobby or a loading screen).
-- Trickshots say **Scoped** or **No-scope** more often. When the replay doesn't record your aim, ClipShot checks the clip itself for the sniper scope view right before the kill. It shows in the trickshot's title and file name, for example "50m_no-scope_…".
-- Fixed sound and video drifting out of sync in some clips. ClipShot couldn't always tell which recording file was still being written, and then skipped its sync correction.
-- Clip viewer: new **Find damage number** button next to **Find kill streaks**.
-
-## 1.0.5
-
-- **Trickshot screenshots.** When a trickshot is saved, ClipShot also saves a picture of the final kill at the moment the kill streaks are most visible (weak or strong streaks, it picks that clip's best frame). Turn it off in Settings.
-- **Screenshot key (F10).** Press it in game to save a picture of that moment. If you press it just after a kill, ClipShot picks the frame where the kill streaks were most visible.
-- **Screenshot from any clip.** In My Clips, select a clip and click **Screenshot**. Scrub or step frame by frame (arrow keys), or click **Find kill moment**, then **Save screenshot**.
-- Screenshots are kept separate from clips: they're saved in **Pictures\Decrypt's ClipShot** and have their own **Screenshots** page in the app.
-
-## 1.0.4
-
-- **Long recording** for YouTube videos and full sessions. Press **F9** (or click **Start long recording** on the Dashboard) to start, and press it again to stop and save. Recordings show up in My Clips under **Recordings**. Change the key in Settings. If Fortnite closes, the recording is saved automatically.
-- Simpler wording throughout the app. The Activity panel now only shows things that matter to you (clip saved, trickshot found, problems and what to do), and technical details go to a log file instead.
-
-## 1.0.3
-
-- Meter Checker shows how each sniper kill was hit: **Scoped**, **No-scope**, or **Aimed (iron sights)** for scopeless snipers like the Hunting Rifle.
-- More snipers are recognized by name: Suppressed, Bolt-Action and Semi-Auto Sniper Rifles join the Heavy, Heavy Impact, Hunting, Automatic, Boom and Lawless Tracking Rifles.
-- New "Name this weapon" link in Meter Checker: if a weapon only shows as "Sniper Rifle" or "Pistol", give it its real name once and ClipShot remembers it.
-- Fixed Hunting Rifle kills that could be labelled as no-scopes.
-
-## 1.0.2
-
-- Meter Checker shows real weapon names from a weapon list (for example "Usopp's Slingshot" instead of "Slingshot Harmless Thrift Pistol", and "Assault Rifle" instead of "Assault Standard"). Weapons not in the list yet show their type (like "Pistol"). Hover a weapon to see the raw Fortnite tags.
-- Usopp's Slingshot and other heavy-ammo weapons count for automatic trickshots.
-
 ## 1.0.1
 
-- ClipShot now tells you when an update is available and installs it with one click (Update now). Turn this off in Settings, or check manually with "Check for updates now".
-- Optional microphone recording (Settings → Audio → Record my microphone) with its own volume. It's mixed by the audio recorder, not the video recorder, so it doesn't cost game FPS like the old microphone option did.
-- The volume slider is now "Game volume" and only affects game sound.
-- Automatic trickshots now count any sniper **or any heavy-ammo weapon** (for example the Hand Cannon or Flint-Knock Pistol) for the final kill of a Victory Royale, not only snipers.
+- **Trickshot details in My Clips.** Each trickshot now shows its weapon and shot (for example "Heavy Sniper Rifle · No-scope"), who eliminated who with their platforms, and the weapon's rarity, right under the clip.
+- **Meter Checker works while ClipShot is recording.** It reads replays at low priority so your game always comes first.
+- Fixed the Meter Checker showing the wrong rarity, such as a "Rare" Heavy Sniper Rifle. Rarity is now only taken when the replay names it outright, and weapons that only come in certain rarities can't be shown with one they don't have. If the replay doesn't say, the Heavy Sniper shows "Epic or Legendary".
 
 ## 1.0.0
 
-First public release.
+The first official release of Decrypt's ClipShot: a clipping app made for Fortnite trickshotters that works with any game.
 
-**Recording**
-- Fixed clips drifting out of sync (and ending early) in long sessions. Video now keeps real capture timestamps instead of counting frames, so dropped frames no longer slow recorded time; about 2.5 s of delay built up after 20 minutes before.
-- Video encoding can no longer fall more than about half a second behind (the capture queue went from 2048 frames to 16).
-- Game audio no longer leaves gaps or goes missing during quiet moments, and it restarts by itself if a headset is unplugged.
-- Clips line up audio with the exact span of video saved, instead of assuming both buffers ended at the same moment.
-- Automatic Victory Royale clips now end a set time after the match actually ended, so the winning shot isn't cut off.
-- Clips are now saved in your Videos folder (Videos\Decrypt's ClipShot). Existing clips are moved there once.
-- New clip volume setting.
-- A timing check appears in Activity every minute.
-
-**App**
-- New Dashboard with one Start ClipShot button and a getting-started guide.
-- Settings use sliders and plain choices; technical options are under Show advanced settings.
-- Meter Checker shows Final Kill and Furthest Kill cards with distance, killer and victim (with platform), weapon and rarity.
-- "Start with Windows" option opens ClipShot quietly in the system tray.
-
-**Install**
-- One-button setup (DecryptsClipShot-Setup.exe) with update, fix and remove.
-- No administrator rights needed.
-- Releases are built and published automatically on GitHub.
+- **Always ready to clip.** ClipShot records in the background from the moment it opens and keeps the last few minutes ready. Press **F8** to save a clip of a great moment, in any game.
+- **Automatic trickshot clips.** When you win a Fortnite match with a sniper or heavy-ammo final kill, ClipShot clips it for you and names it with the distance, the exact weapon, and whether it was scoped or a no-scope (for example "53m_no-scope").
+- **Trickshot screenshots.** Every trickshot also gets two pictures: one where the swag lines are strongest and one where the damage number is clearest.
+- **Screenshots any time.** Press **F10** in game, or open any clip, step through it frame by frame and save the exact moment.
+- **Long recording.** Press **F9** to record a full session for YouTube, and **F9** again to save it.
+- **Meter Checker.** Open any Fortnite replay to see its final and furthest kills: distance, killer and victim, weapon and rarity.
+- **Game sound and microphone,** each with its own volume, kept in sync with the video for the whole session.
+- **Light on your PC.** Recording uses your graphics card when it can. **Optimize for my PC** in Settings picks the best setup for you.
+- **Opens with Windows** (optional), quietly in the system tray, and updates itself when a new version comes out.

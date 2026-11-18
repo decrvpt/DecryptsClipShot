@@ -999,19 +999,64 @@ public partial class MainWindow : Window
         {
             string category = file.Directory?.Name ?? "Clip";
             string thumb = await EnsureThumbnailAsync(file.FullName, thumbnailDirectory);
+            bool trickshot = string.Equals(category, "Trickshots", StringComparison.OrdinalIgnoreCase);
+            (string weapon, string players, string rarity)? kill = trickshot ? ReadClipInfo(file) : null;
             var item = new ClipItem
             {
                 Title = BuildClipTitle(file, category),
                 Category = category,
                 Details = $"{file.LastWriteTime:g}  •  {file.Length / 1024d / 1024d:F1} MB",
                 FullPath = file.FullName,
-                ThumbnailPath = File.Exists(thumb) ? thumb : null
+                ThumbnailPath = File.Exists(thumb) ? thumb : null,
+                KillWeaponLine = kill?.weapon,
+                KillPlayersLine = kill?.players,
+                KillRarity = kill?.rarity,
+                KillRarityBrush = kill is null ? null : new SolidColorBrush(RarityColor(kill.Value.rarity.Split(' ')[0]))
             };
             if (string.Equals(category, "Trickshots", StringComparison.OrdinalIgnoreCase))
                 _trickshotClips.Add(item);
             else
                 _otherClips.Add(item);
             if (_recentClips.Count < 5) _recentClips.Add(item);
+        }
+    }
+
+    private string ClipInfoPath(string clipPath) => Path.Combine(
+        ResolveConfiguredPath("folders", "work", "work"), "clip_info",
+        Path.GetFileNameWithoutExtension(clipPath) + ".json");
+
+    // The replay details the engine kept when it confirmed this trickshot.
+    private (string weapon, string players, string rarity)? ReadClipInfo(FileInfo clip)
+    {
+        string path = ClipInfoPath(clip.FullName);
+        if (!File.Exists(path)) return null;
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(File.ReadAllText(path));
+            JsonElement root = document.RootElement;
+            string weapon = Present(JsonText(root, "weapon", ""));
+            string shot = JsonText(root, "shotLabel", "");
+            if (shot.Length == 0 || shot.Equals("Not recorded", StringComparison.OrdinalIgnoreCase))
+            {
+                // The replay had no aim data; the engine read it from the video and
+                // put it in the file name ("53m_no-scope_...").
+                string[] tokens = Path.GetFileNameWithoutExtension(clip.Name).Split('_');
+                shot = tokens.Length > 1 ? tokens[1].ToLowerInvariant() switch
+                {
+                    "no-scope" => "No-scope",
+                    "scoped" => "Scoped",
+                    "aimed" => "Iron sights",
+                    _ => ""
+                } : "";
+            }
+            string players = $"{WithPlatform(JsonText(root, "killer", ""), JsonText(root, "killerPlatform", ""))}  →  " +
+                             WithPlatform(JsonText(root, "victim", ""), JsonText(root, "victimPlatform", ""));
+            string rarity = Present(JsonText(root, "rarity", ""));
+            return (shot.Length > 0 ? $"{weapon}  ·  {shot}" : weapon, players, rarity == "—" ? "" : rarity);
+        }
+        catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException)
+        {
+            return null;
         }
     }
 
@@ -1561,6 +1606,12 @@ public partial class MainWindow : Window
             {
                 File.Move(clip.FullPath, destination);
             }
+            // Keep the trickshot details with the clip.
+            string oldInfo = ClipInfoPath(clip.FullPath), newInfo = ClipInfoPath(destination);
+            if (File.Exists(oldInfo) && !string.Equals(oldInfo, newInfo, StringComparison.OrdinalIgnoreCase))
+            {
+                try { File.Move(oldInfo, newInfo, true); } catch (IOException) { }
+            }
             AddActivity($"Renamed clip to {Path.GetFileName(destination)}");
             await RefreshClipsAsync();
         }
@@ -1776,14 +1827,6 @@ public partial class MainWindow : Window
 
     private async void AnalyzeReplay_Click(object sender, RoutedEventArgs e)
     {
-        if (_captureActive || _engine is { HasExited: false })
-        {
-            ReplayAnalysisStatusText.Text = "Turn ClipShot off before analyzing a replay so parsing cannot affect game performance.";
-            MessageBox.Show("Turn ClipShot off before analyzing an older replay.",
-                "Meter Checker", MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
-
         string replayPath = ReplayPathBox.Text.Trim();
         if (!File.Exists(replayPath))
         {
@@ -1816,6 +1859,9 @@ public partial class MainWindow : Window
             start.ArgumentList.Add(resultPath);
             parser = Process.Start(start);
             if (parser is null) throw new InvalidOperationException("The local parser could not be started.");
+            // Runs fine while recording: low priority, so your game always comes first.
+            try { parser.PriorityClass = ProcessPriorityClass.BelowNormal; }
+            catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception) { }
 
             Task<string> outputTask = parser.StandardOutput.ReadToEndAsync();
             Task<string> errorTask = parser.StandardError.ReadToEndAsync();
@@ -1953,8 +1999,8 @@ public partial class MainWindow : Window
         shot.Text = Present(shotLabel);
         shot.FontWeight = shotLabel == "No-scope" ? FontWeights.SemiBold : FontWeights.Normal;
         shot.Foreground = shotLabel == "No-scope"
-            ? new SolidColorBrush(Color.FromRgb(0xEF, 0x55, 0x55))
-            : new SolidColorBrush(Color.FromRgb(0xF9, 0xF4, 0xF4));
+            ? new SolidColorBrush(Color.FromRgb(0xE5, 0x48, 0x4D))
+            : new SolidColorBrush(Color.FromRgb(0xF4, 0xF4, 0xF5));
         double distanceUU = JsonNumber(kill, "distanceUU");
         distance.Text = distanceUU > 0
             ? (distanceUU / 100.0).ToString("F2", CultureInfo.CurrentCulture) + " m"
@@ -1979,7 +2025,8 @@ public partial class MainWindow : Window
         nameWeapon.Tag = (key, weapon.Text);
         string rarityName = Present(JsonText(kill, "rarity", ""));
         rarity.Text = rarityName;
-        rarity.Foreground = new SolidColorBrush(RarityColor(rarityName));
+        // "Epic or Legendary" (replay didn't say which) takes the first one's color.
+        rarity.Foreground = new SolidColorBrush(RarityColor(rarityName.Split(' ')[0]));
     }
 
     private static string Present(string value) =>

@@ -3274,6 +3274,24 @@ static void take_screenshot(const AppConfig *config, const Recorder *recorder)
     else wprintf(L"SHOT|failed\n");
 }
 
+/* Keeps the replay details of a trickshot (distance, killer, victim, weapon,
+   shot, rarity) as work\\clip_info\\<clip name>.json, so the app can show them
+   under the clip. Kept out of the Videos folder so it only holds videos. */
+static void save_clip_info(const AppConfig *config, const wchar_t *clip)
+{
+    wchar_t folder[PATH_CAP], source[PATH_CAP], target[PATH_CAP], name[PATH_CAP];
+    const wchar_t *slash = wcsrchr(clip, L'\\');
+    wchar_t *dot;
+    wcscpy_s(name, ARRAY_COUNT(name), slash ? slash + 1 : clip);
+    dot = wcsrchr(name, L'.');
+    if (dot) *dot = L'\0';
+    join_path(folder, ARRAY_COUNT(folder), config->work_dir, L"clip_info");
+    ensure_directory(folder);
+    join_path(source, ARRAY_COUNT(source), config->work_dir, L"latest_local_replay.json");
+    swprintf_s(target, ARRAY_COUNT(target), L"%ls\\%ls.json", folder, name);
+    CopyFileW(source, target, FALSE);
+}
+
 static void classify_pending_clip(const AppConfig *config, const wchar_t *clip,
                                   const wchar_t *replay)
 {
@@ -3325,6 +3343,7 @@ static void classify_pending_clip(const AppConfig *config, const wchar_t *clip,
             else
                 wprintf(L"Qualified trickshot (%ls, %.0fm): %ls\n", weapon, meters, destination);
             if (config->auto_screenshot) save_trickshot_screenshot(config, destination, &frame);
+            save_clip_info(config, destination);
         } else
             print_last_error(L"Could not move qualified clip");
     } else if (config->keep_rejected_clips) {
