@@ -92,6 +92,9 @@ internal static class Program
             File.WriteAllText(resultPath, JsonSerializer.Serialize(result,
                 new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true }));
             Console.WriteLine(result.Reason);
+            // Diagnostic list of weapon names in the replay, to find where the
+            // exact weapon (and its rarity) is stored.
+            WeaponScan.Write(replay, Path.Combine(Path.GetDirectoryName(resultPath)!, "weapons_found.txt"));
             return 0;
         }
         catch (Exception exception)
