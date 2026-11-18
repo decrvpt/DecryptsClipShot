@@ -569,6 +569,17 @@
                                         </StackPanel>
                                     </Grid>
 
+                                    <StackPanel Margin="0,0,0,18" HorizontalAlignment="Left" Width="320">
+                                        <TextBlock Text="Clip size" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,6"/>
+                                        <ComboBox x:Name="ClipSizeBox" Style="{StaticResource DarkComboBoxStyle}">
+                                            <ComboBoxItem Content="Smaller files" Tag="small"/>
+                                            <ComboBoxItem Content="Balanced (recommended)" Tag="balanced"/>
+                                            <ComboBoxItem Content="Best quality (big files)" Tag="large"/>
+                                            <ComboBoxItem Content="No limit (very big files)" Tag="off"/>
+                                        </ComboBox>
+                                        <TextBlock Text="A 2-minute 1080p 60 FPS clip is about 110 MB on Smaller, 180 MB on Balanced and 320 MB on Best quality. Applies the next time recording starts." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                    </StackPanel>
+
                                     <DockPanel Margin="0,0,0,2">
                                         <TextBlock x:Name="ClipLengthValueText" DockPanel.Dock="Right" Text="90 seconds" FontSize="13" FontWeight="SemiBold"/>
                                         <TextBlock Text="Clip length: how much is saved when you press the shortcut" Foreground="{StaticResource MutedBrush}" FontSize="12"/>

@@ -82,6 +82,7 @@ typedef struct {
     int local_replay_enabled;
     int capture_game_audio;
     int output_height;
+    wchar_t clip_size[16]; /* small, balanced, large or off */
     int prioritize_game;
     int av_sync_offset_ms;
     int game_audio_volume;
@@ -317,6 +318,8 @@ static void load_config(AppConfig *config)
     config->local_replay_enabled = load_ini_int(ini, L"local_replay", L"enabled", 1);
     config->capture_game_audio = load_ini_int(ini, L"recording", L"capture_game_audio", 1);
     config->output_height = load_ini_int(ini, L"recording", L"output_height", 1080);
+    load_ini_string(ini, L"recording", L"clip_size", L"balanced",
+                    config->clip_size, ARRAY_COUNT(config->clip_size));
     config->prioritize_game = load_ini_int(ini, L"recording", L"prioritize_game", 1);
     /* Advanced, not shown in the GUI: positive values delay audio relative to
        video in saved clips. Leave at 0 unless a fixed offset is measured. */
@@ -972,6 +975,72 @@ static void recorder_poll_audio(Recorder *recorder, const AppConfig *config)
     }
 }
 
+/* Removes "-name value" from an encoder option string. */
+static void strip_option(wchar_t *options, const wchar_t *name)
+{
+    size_t name_len = wcslen(name);
+    wchar_t *at = options;
+    while ((at = wcsstr(at, name)) != NULL) {
+        wchar_t *end = at + name_len;
+        if ((at != options && at[-1] != L' ') || (*end != L' ' && *end != L'\0')) { at = end; continue; }
+        while (*end == L' ') end++;
+        while (*end && *end != L' ') end++;  /* the value */
+        while (*end == L' ') end++;
+        memmove(at, end, (wcslen(end) + 1) * sizeof(wchar_t));
+    }
+}
+
+/* Every quality preset used constant quality with no ceiling, so busy
+   Fortnite footage (grass, storm, effects) could reach 30-60 Mbps: about
+   1 GB for 2 minutes. This caps the bitrate for the chosen clip size,
+   scaled to the recording's resolution and frame rate. Each encoder needs
+   its own rate-control mode for a cap to take effect. Custom options that
+   already set -maxrate are left alone. */
+static void apply_clip_size(const AppConfig *config, int height, wchar_t *options, size_t options_cap)
+{
+    double base_kbps, scale;
+    int max_kbps, target_kbps;
+    wchar_t extra[256];
+    const wchar_t *encoder = config->video_encoder;
+
+    if (_wcsicmp(config->clip_size, L"off") == 0 || wcsstr(options, L"-maxrate")) return;
+    base_kbps = _wcsicmp(config->clip_size, L"small") == 0 ? 10000.0
+              : _wcsicmp(config->clip_size, L"large") == 0 ? 28000.0 : 16000.0; /* at 1080p60 */
+    if (height <= 0) height = 1080;
+    scale = pow(((double)height * height) / (1080.0 * 1080.0), 0.8);
+    if (config->framerate <= 30) scale *= 0.65;
+    max_kbps = (int)(base_kbps * scale);
+    if (max_kbps < 3000) max_kbps = 3000;
+    target_kbps = max_kbps * 3 / 4;
+
+    if (_wcsicmp(encoder, L"h264_amf") == 0) {
+        strip_option(options, L"-rc");
+        strip_option(options, L"-qp_i");
+        strip_option(options, L"-qp_p");
+        swprintf_s(extra, ARRAY_COUNT(extra), L" -rc vbr_peak -b:v %dk -maxrate %dk -bufsize %dk",
+                   target_kbps, max_kbps, max_kbps * 2);
+    } else if (_wcsicmp(encoder, L"h264_qsv") == 0) {
+        strip_option(options, L"-global_quality");
+        swprintf_s(extra, ARRAY_COUNT(extra), L" -b:v %dk -maxrate %dk -bufsize %dk",
+                   target_kbps, max_kbps, max_kbps * 2);
+    } else if (_wcsicmp(encoder, L"h264_mf") == 0) {
+        strip_option(options, L"-rate_control");
+        strip_option(options, L"-quality");
+        swprintf_s(extra, ARRAY_COUNT(extra), L" -rate_control pc_vbr -b:v %dk -maxrate %dk",
+                   target_kbps, max_kbps);
+    } else if (_wcsicmp(encoder, L"h264_nvenc") == 0) {
+        /* Keeps -rc vbr -cq: quality-first, but never above the cap. */
+        strip_option(options, L"-b:v");
+        swprintf_s(extra, ARRAY_COUNT(extra), L" -b:v %dk -maxrate %dk -bufsize %dk",
+                   target_kbps, max_kbps, max_kbps * 2);
+    } else {
+        /* x264: CRF with a ceiling. */
+        swprintf_s(extra, ARRAY_COUNT(extra), L" -maxrate %dk -bufsize %dk", max_kbps, max_kbps * 2);
+    }
+    wcscat_s(options, options_cap, extra);
+    wprintf(L"Clip size: %ls (up to %d Mbps).\n", config->clip_size, (max_kbps + 500) / 1000);
+}
+
 static int recorder_start_backend(Recorder *recorder, const AppConfig *config, int use_dxgi)
 {
     SECURITY_ATTRIBUTES security;
@@ -981,6 +1050,7 @@ static int recorder_start_backend(Recorder *recorder, const AppConfig *config, i
     wchar_t capture_args[1536] = L"";
     wchar_t video_filter[512] = L"";
     wchar_t thread_limit[128] = L"";
+    wchar_t encoder_options[1024];
     int game_audio_recording = 0;
     int segment_count = video_wrap_count(config);
     int keyframe_interval = config->framerate * 2;
@@ -1067,6 +1137,18 @@ static int recorder_start_backend(Recorder *recorder, const AppConfig *config, i
         wcscpy_s(thread_limit, ARRAY_COUNT(thread_limit), L"-filter_threads 1 ");
         wcscat_s(thread_limit, ARRAY_COUNT(thread_limit), L"-threads 2 ");
     }
+    {
+        DEVMODEW mode;
+        int recorded_height = capture_height;
+        ZeroMemory(&mode, sizeof(mode));
+        mode.dmSize = sizeof(mode);
+        if (EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &mode) && mode.dmPelsHeight > 0)
+            recorded_height = (int)mode.dmPelsHeight; /* real pixels, not DPI-scaled */
+        if (config->output_height > 0 && config->output_height < recorded_height)
+            recorded_height = config->output_height;
+        wcscpy_s(encoder_options, ARRAY_COUNT(encoder_options), config->video_options);
+        apply_clip_size(config, recorded_height, encoder_options, ARRAY_COUNT(encoder_options));
+    }
 
     swprintf_s(command, ARRAY_COUNT(command),
         L"\"%ls\" -hide_banner -loglevel warning -y -nostats "
@@ -1077,7 +1159,7 @@ static int recorder_start_backend(Recorder *recorder, const AppConfig *config, i
         L"-segment_list \"%ls\\video_list.csv\" -segment_list_type csv -segment_list_size %d "
         L"-segment_format_options cluster_time_limit=100 -reset_timestamps 1 \"%ls\"",
         config->ffmpeg_path, capture_args, video_filter,
-        config->video_encoder, config->video_options, thread_limit, keyframe_interval,
+        config->video_encoder, encoder_options, thread_limit, keyframe_interval,
         config->segment_seconds, config->segment_seconds, segment_count,
         config->buffer_dir, segment_count + 2, pattern);
 

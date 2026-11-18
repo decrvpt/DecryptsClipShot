@@ -2,6 +2,7 @@
 
 ## 1.0.3
 
+- **Much smaller clips.** Clips could reach 1 GB for 2 minutes (AMD graphics cards were hit hardest), because recording had no size limit in busy scenes. ClipShot now caps the file size, and a new **Clip size** setting lets you pick Smaller, Balanced (the default, about 180 MB for 2 minutes at 1080p 60 FPS) or Best quality. Works on NVIDIA, AMD, Intel and CPU recording.
 - **Your furthest shots.** A new Furthest Shots page ranks your automatic trickshots by distance, with the weapon, shot, who you eliminated and a button to watch the clip. Only shots ClipShot confirmed from the match itself count; Meter Checker results and manual clips can't be added. You can hide bot kills, and trickshots you already have are added the first time you open it. ClipShot also keeps a copy of each trickshot's match replay.
 - **Automatic trickshots are sniper-only now.** A win only counts as a trickshot when your final kill was with a sniper. For any other weapon, save the clip yourself with **F8**.
 - **Fixed clips getting stuck in Pending.** If you left a match early or didn't win, the end-of-match clip could sit in Pending forever. Every automatic clip now gets a final answer: trickshots go to Trickshots, everything else goes to Rejected (or is removed if you've turned off keeping clips that don't qualify). Clips that were already stuck are moved to Rejected the next time ClipShot opens.

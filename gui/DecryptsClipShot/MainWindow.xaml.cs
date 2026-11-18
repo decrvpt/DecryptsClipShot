@@ -233,6 +233,13 @@ public partial class MainWindow : Window
             : 100;
         SegmentBox.Text = ReadIni("recording", "segment_seconds", "30");
         ClipFolderBox.Text = ClipsDirectory;
+        ClipSizeBox.SelectedIndex = ReadIni("recording", "clip_size", "balanced") switch
+        {
+            "small" => 0,
+            "large" => 2,
+            "off" => 3,
+            _ => 1
+        };
         string outputHeight = ReadIni("recording", "output_height", "1080");
         ResolutionBox.SelectedIndex = outputHeight switch
         {
@@ -1171,6 +1178,7 @@ public partial class MainWindow : Window
         WriteIni("recording", "segment_seconds", segment.ToString(CultureInfo.InvariantCulture));
         WriteIni("recording", "capture_backend", "auto");
         WriteIni("recording", "output_height", ComboValue(ResolutionBox, "1080"));
+        WriteIni("recording", "clip_size", ComboValue(ClipSizeBox, "balanced"));
         WriteIni("recording", "prioritize_game", PrioritizeGameCheck.IsChecked == true ? "1" : "0");
         WriteIni("recording", "capture_game_audio", GameAudioCheck.IsChecked == true ? "1" : "0");
         WriteIni("recording", "game_audio_device", GameAudioDeviceBox.Text.Trim());
