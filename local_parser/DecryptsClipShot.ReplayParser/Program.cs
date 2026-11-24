@@ -80,7 +80,8 @@ internal static class Program
         {
             // Full mode retains movement/targeting samples used for conservative
             // no-scope detection. Parsing happens after the match, not while gaming.
-            var reader = new ReplayReader(null, ParseMode.Full);
+            // Also reads replays from older Fortnite builds (revival projects).
+            var reader = new RevivalReplayReader(ParseMode.Full);
             FortniteReplay replay = reader.ReadReplay(replayPath);
             LocalReplayResult result = Analyze(replay, reader);
             result = result with

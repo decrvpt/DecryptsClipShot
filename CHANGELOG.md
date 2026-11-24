@@ -2,6 +2,7 @@
 
 ## 1.0.10
 
+- **Trickshots work on revival projects.** Older Fortnite builds save replays in a format ClipShot couldn't read, so every revival match went to Rejected. ClipShot now reads them using the decompression file that comes with the game itself. Keep the game open for a few seconds after a match so the check can finish (only needed the first time).
 - **Sharper clips.** Clips looked soft in busy scenes because the size limit added in 1.0.5 was too tight. Every Clip size setting now allows more detail: a 2-minute 1080p 60 FPS clip is about 300 MB on Balanced (was 180 MB), 150 MB on Smaller and 500 MB on Best quality. Change it in Settings → Recording → **Clip size**.
 
 ## 1.0.9
