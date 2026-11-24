@@ -83,6 +83,9 @@ typedef struct {
     int capture_game_audio;
     int output_height;
     wchar_t clip_size[16]; /* small, balanced, large or off */
+    wchar_t audio_source[16];        /* "game" (game sound only) or "all" (everything on the PC) */
+    wchar_t extra_audio_apps[512];   /* with "game": other apps to record, e.g. "Discord.exe;Spotify.exe" */
+    int other_apps_volume;
     int prioritize_game;
     int av_sync_offset_ms;
     int game_audio_volume;
@@ -320,6 +323,13 @@ static void load_config(AppConfig *config)
     config->output_height = load_ini_int(ini, L"recording", L"output_height", 1080);
     load_ini_string(ini, L"recording", L"clip_size", L"balanced",
                     config->clip_size, ARRAY_COUNT(config->clip_size));
+    load_ini_string(ini, L"recording", L"audio_source", L"game",
+                    config->audio_source, ARRAY_COUNT(config->audio_source));
+    load_ini_string(ini, L"recording", L"extra_audio_apps", L"",
+                    config->extra_audio_apps, ARRAY_COUNT(config->extra_audio_apps));
+    config->other_apps_volume = load_ini_int(ini, L"recording", L"other_apps_volume", 100);
+    if (config->other_apps_volume < 0) config->other_apps_volume = 0;
+    if (config->other_apps_volume > 200) config->other_apps_volume = 200;
     config->prioritize_game = load_ini_int(ini, L"recording", L"prioritize_game", 1);
     /* Advanced, not shown in the GUI: positive values delay audio relative to
        video in saved clips. Leave at 0 unless a fixed offset is measured. */
@@ -761,6 +771,14 @@ static void stop_audio_helpers(Recorder *recorder)
     stop_audio_chain(recorder);
 }
 
+/* Extra apps (like Discord) count as an audio source on their own in
+   game-only mode, even with game sound and the microphone off. */
+static int config_has_audio(const AppConfig *config)
+{
+    return config->capture_game_audio || config->capture_microphone ||
+           (_wcsicmp(config->audio_source, L"game") == 0 && config->extra_audio_apps[0]);
+}
+
 static int start_audio_helper(Recorder *recorder, const AppConfig *config,
                               const wchar_t *mode, const wchar_t *device,
                               const wchar_t *pipe_name)
@@ -791,6 +809,19 @@ static int start_audio_helper(Recorder *recorder, const AppConfig *config,
         swprintf_s(command + used, ARRAY_COUNT(command) - used,
                    L" --mic \"%ls\" --mic-volume %d",
                    config->microphone_device, config->microphone_volume);
+    }
+    {
+        /* Game sound only (Windows 11 / Windows 10 20348+; the helper falls
+           back to all sound on older Windows), plus any extra apps. */
+        size_t used = wcslen(command);
+        int game_only = _wcsicmp(config->audio_source, L"all") != 0;
+        swprintf_s(command + used, ARRAY_COUNT(command) - used, L" --source %ls", game_only ? L"game" : L"all");
+        if (game_only && config->extra_audio_apps[0]) {
+            used = wcslen(command);
+            swprintf_s(command + used, ARRAY_COUNT(command) - used,
+                       L" --extra \"%ls\" --other-volume %d",
+                       config->extra_audio_apps, config->other_apps_volume);
+        }
     }
     ZeroMemory(&startup, sizeof(startup));
     ZeroMemory(&process, sizeof(process));
@@ -1084,7 +1115,7 @@ static int recorder_start_backend(Recorder *recorder, const AppConfig *config, i
 
     /* Audio is deliberately recorded by a separate FFmpeg process. Keeping it
        out of the live video mux removes audio timing from the proven video path. */
-    recorder->audio_wanted = config->capture_game_audio || config->capture_microphone;
+    recorder->audio_wanted = config_has_audio(config);
     recorder->audio_failed_tick = 0;
     if (recorder->audio_wanted && start_audio_chain(recorder, config))
         game_audio_recording = 1;
@@ -1846,7 +1877,7 @@ static int assemble_clip(const AppConfig *config, const wchar_t *snapshot,
         else
             wprintf(L"Independent audio assembly failed; saving this clip as video only. Details: %ls\n",
                     log_path);
-    } else if (config->capture_game_audio || config->capture_microphone) {
+    } else if (config_has_audio(config)) {
         wprintf(L"No independent audio segment was available; saving video only.\n");
     }
 
@@ -2031,7 +2062,7 @@ static int save_clip(const AppConfig *config, Recorder *recorder, const wchar_t 
         free(audio);
         return 0;
     }
-    if (config->capture_game_audio || config->capture_microphone)
+    if (config_has_audio(config))
         audio_count = list_segments_matching(config->buffer_dir, L"audio_*.mka",
                                              audio, MAX_SEGMENTS);
 
@@ -2247,7 +2278,7 @@ static void long_record_poll(const AppConfig *config, LongRecording *lr)
     if (!lr->active || GetTickCount64() - lr->last_collect < LONG_COLLECT_MS) return;
     lr->last_collect = GetTickCount64();
     long_collect_kind(config, lr, 1, 0, NULL);
-    if (config->capture_game_audio || config->capture_microphone)
+    if (config_has_audio(config))
         long_collect_kind(config, lr, 0, 0, NULL);
 }
 
@@ -2258,7 +2289,7 @@ static void long_record_stop(const AppConfig *config, Recorder *recorder, LongRe
     TimingSnapshot timing;
     PiecePositions positions;
     wchar_t saved[PATH_CAP];
-    int has_audio_source = config->capture_game_audio || config->capture_microphone;
+    int has_audio_source = config_has_audio(config);
 
     if (!lr->active) return;
     lr->active = 0;

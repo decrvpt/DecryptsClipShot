@@ -612,7 +612,19 @@
                             <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="22" Margin="0,0,0,16">
                                 <StackPanel>
                                     <Grid Margin="0,0,0,16"><TextBlock Text="Audio" FontSize="17" FontWeight="SemiBold"/><Button Content="Refresh devices" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Right" Click="RefreshAudioDevices_Click"/></Grid>
-                                    <StackPanel><CheckBox x:Name="GameAudioCheck" Content="Record game sound" Foreground="White" FontWeight="SemiBold" Margin="0,0,0,8"/><TextBlock Text="Sound device (leave on Default unless your game sound uses another headset or speaker)" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/><ComboBox x:Name="GameAudioDeviceBox" Style="{StaticResource DarkComboBoxStyle}" IsEditable="False" ToolTip="The speakers or headset your game sound plays through."/></StackPanel>
+                                    <TextBlock Text="What sound to record" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,6"/>
+                                    <ComboBox x:Name="AudioSourceBox" Style="{StaticResource DarkComboBoxStyle}" Margin="0,0,0,6" SelectionChanged="AudioSource_Changed">
+                                        <ComboBoxItem Content="Game sound only (recommended)" Tag="game"/>
+                                        <ComboBoxItem Content="Everything playing on my PC" Tag="all"/>
+                                    </ComboBox>
+                                    <TextBlock Text="Game sound only keeps music, videos and calls out of your clips. It records Fortnite, or whatever game you have open full screen. Needs Windows 11; on older Windows, ClipShot records everything." Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                    <StackPanel x:Name="ExtraAudioOptions" Margin="0,0,0,16">
+                                        <CheckBox x:Name="DiscordAudioCheck" Content="Also record Discord" Foreground="White" Margin="0,0,0,8"
+                                                  ToolTip="Adds your Discord calls to clips. Your own voice is only included if you record your microphone below."/>
+                                        <TextBlock Text="Other apps to record (optional, for example Spotify.exe; separate with commas)" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                                        <TextBox x:Name="OtherAudioAppsBox" Style="{StaticResource InputStyle}"/>
+                                    </StackPanel>
+                                    <StackPanel><CheckBox x:Name="GameAudioCheck" Content="Record game sound" Foreground="White" FontWeight="SemiBold" Margin="0,0,0,8"/><TextBlock Text="Sound device for &quot;Everything playing on my PC&quot; (leave on Default unless you use another headset or speaker)" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/><ComboBox x:Name="GameAudioDeviceBox" Style="{StaticResource DarkComboBoxStyle}" IsEditable="False" ToolTip="The speakers or headset your game sound plays through."/></StackPanel>
                                     <DockPanel Margin="0,18,0,2">
                                         <TextBlock x:Name="VolumeValueText" DockPanel.Dock="Right" Text="100%" FontSize="13" FontWeight="SemiBold"/>
                                         <TextBlock Text="Game volume" Foreground="{StaticResource MutedBrush}" FontSize="12"/>

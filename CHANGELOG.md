@@ -1,6 +1,13 @@
 # Changelog
 
-## 1.0.3
+## 1.0.8
+
+- **Clips record only your game's sound.** Music, YouTube, calls and other apps stay out of your clips. ClipShot records Fortnite's sound, or the game you have open full screen in any other game. Change it in Settings → Audio → **What sound to record**.
+- **Add Discord or other apps.** Turn on **Also record Discord** to include your calls, or list other apps (like Spotify.exe) to add them too.
+- Game sound only needs Windows 11. On older Windows, ClipShot records everything playing on your PC, like before.
+- The update notes now always show what's new in that version. Before, some updates showed notes from an older version.
+
+## 1.0.5
 
 - **Much smaller clips.** Clips could reach 1 GB for 2 minutes (AMD graphics cards were hit hardest), because recording had no size limit in busy scenes. ClipShot now caps the file size, and a new **Clip size** setting lets you pick Smaller, Balanced (the default, about 180 MB for 2 minutes at 1080p 60 FPS) or Best quality. Works on NVIDIA, AMD, Intel and CPU recording.
 - **Your furthest shots.** A new Furthest Shots page ranks your automatic trickshots by distance, with the weapon, shot, who you eliminated and a button to watch the clip. Only shots ClipShot confirmed from the match itself count; Meter Checker results and manual clips can't be added. You can hide bot kills, and trickshots you already have are added the first time you open it. ClipShot also keeps a copy of each trickshot's match replay.

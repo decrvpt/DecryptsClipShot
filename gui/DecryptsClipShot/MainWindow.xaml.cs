@@ -249,6 +249,10 @@ public partial class MainWindow : Window
         };
         PrioritizeGameCheck.IsChecked = ReadIni("recording", "prioritize_game", "1") == "1";
         GameAudioCheck.IsChecked = ReadIni("recording", "capture_game_audio", "1") == "1";
+        AudioSourceBox.SelectedIndex = ReadIni("recording", "audio_source", "game") == "all" ? 1 : 0;
+        DiscordAudioCheck.IsChecked = ReadIni("recording", "record_discord", "0") == "1";
+        OtherAudioAppsBox.Text = ReadIni("recording", "other_audio_apps", "");
+        ExtraAudioOptions.IsEnabled = AudioSourceBox.SelectedIndex == 0;
         string gameDevice = ReadIni("recording", "game_audio_device", DefaultOutputDevice);
         if (string.IsNullOrWhiteSpace(gameDevice)) gameDevice = DefaultOutputDevice;
         _outputDevices.Add(gameDevice);
@@ -300,6 +304,27 @@ public partial class MainWindow : Window
             : "Recording uses your graphics card, so your game stays smooth.";
         _loadingSettings = false;
         RefreshMetrics();
+    }
+
+    private void AudioSource_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (ExtraAudioOptions is not null) ExtraAudioOptions.IsEnabled = AudioSourceBox.SelectedIndex == 0;
+    }
+
+    // What the audio helper gets: exe names separated by ";". "spotify" and
+    // "Spotify.exe" both work; Discord covers its test versions too.
+    private static string ExtraAudioApps(bool discord, string others)
+    {
+        var apps = new List<string>();
+        if (discord) apps.AddRange(new[] { "Discord.exe", "DiscordPTB.exe", "DiscordCanary.exe" });
+        foreach (string raw in others.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            string name = Path.GetFileName(raw.Trim('"'));
+            if (name.Length == 0) continue;
+            if (!name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) name += ".exe";
+            if (!apps.Contains(name, StringComparer.OrdinalIgnoreCase)) apps.Add(name);
+        }
+        return string.Join(';', apps);
     }
 
     private static string ComboValue(System.Windows.Controls.ComboBox box, string fallback) =>
@@ -1181,6 +1206,10 @@ public partial class MainWindow : Window
         WriteIni("recording", "clip_size", ComboValue(ClipSizeBox, "balanced"));
         WriteIni("recording", "prioritize_game", PrioritizeGameCheck.IsChecked == true ? "1" : "0");
         WriteIni("recording", "capture_game_audio", GameAudioCheck.IsChecked == true ? "1" : "0");
+        WriteIni("recording", "audio_source", ComboValue(AudioSourceBox, "game"));
+        WriteIni("recording", "record_discord", DiscordAudioCheck.IsChecked == true ? "1" : "0");
+        WriteIni("recording", "other_audio_apps", OtherAudioAppsBox.Text.Trim());
+        WriteIni("recording", "extra_audio_apps", ExtraAudioApps(DiscordAudioCheck.IsChecked == true, OtherAudioAppsBox.Text));
         WriteIni("recording", "game_audio_device", GameAudioDeviceBox.Text.Trim());
         WriteIni("recording", "game_audio_volume", ((int)VolumeSlider.Value).ToString(CultureInfo.InvariantCulture));
         WriteIni("recording", "capture_microphone", MicrophoneCheck.IsChecked == true ? "1" : "0");

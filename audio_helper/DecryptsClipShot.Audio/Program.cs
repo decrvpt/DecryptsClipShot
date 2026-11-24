@@ -33,16 +33,34 @@ internal static class Program
         string? micName = Argument(args, "--mic");
         float gameVolume = Percent(Argument(args, "--game-volume"));
         float micVolume = Percent(Argument(args, "--mic-volume"));
+        // "game": only the game's sound (plus any --extra apps).
+        // "all": everything playing on the PC, as before.
+        string source = Argument(args, "--source") ?? "all";
+        string[] extraApps = (Argument(args, "--extra") ?? "")
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        float otherVolume = Percent(Argument(args, "--other-volume"));
         if (!mode.Equals("loopback", StringComparison.OrdinalIgnoreCase) ||
             string.IsNullOrWhiteSpace(pipeName))
         {
             Console.Error.WriteLine(
                 "Usage: ClipShotAudio.exe --mode loopback --device default|name --pipe name " +
-                "[--game-volume 0-200] [--mic default|name] [--mic-volume 0-200]");
+                "[--game-volume 0-200] [--mic default|name] [--mic-volume 0-200] " +
+                "[--source game|all] [--extra App.exe;Other.exe] [--other-volume 0-200]");
             return 2;
         }
 
-        try { return Capture(deviceName, pipeName, micName, gameVolume, micVolume); }
+        try
+        {
+            if (source.Equals("game", StringComparison.OrdinalIgnoreCase))
+            {
+                if (ProcessLoopbackCapture.IsSupported(out string reason))
+                    return CaptureApps(pipeName, micName, gameVolume, micVolume, extraApps, otherVolume);
+                Console.Error.WriteLine(
+                    "Game-only sound needs Windows 11 (or Windows 10 build 20348 or newer). " +
+                    $"Recording all sound on this PC instead. ({reason})");
+            }
+            return Capture(deviceName, pipeName, micName, gameVolume, micVolume);
+        }
         catch (Exception exception)
         {
             Console.Error.WriteLine($"Audio capture failed: {exception.Message}");
@@ -116,24 +134,10 @@ internal static class Program
             .WithFormat(requestedFormat)
             .Build();
 
-        // The microphone is optional. If it can't start (unplugged, blocked by
-        // Windows privacy settings), game audio still records.
-        MicrophoneSource? microphone = null;
-        if (!string.IsNullOrWhiteSpace(micName))
-        {
-            try
-            {
-                microphone = new MicrophoneSource(ResolveDevice(enumerator, DataFlow.Capture, micName), micVolume);
-            }
-            catch (Exception exception)
-            {
-                Console.Error.WriteLine(
-                    $"Microphone unavailable ({exception.Message}). If Windows blocks it, allow desktop apps " +
-                    "to use the microphone in Settings → Privacy & security → Microphone. Game audio continues.");
-            }
-        }
+        MicrophoneSource? microphone = OpenMicrophone(enumerator, micName, micVolume);
 
-        using var writer = new DirectPcmPipeWriter(pipe, capture.WaveFormat, gameVolume, microphone);
+        using var writer = new DirectPcmPipeWriter(pipe, capture.WaveFormat, gameVolume,
+            microphone is null ? Array.Empty<IMixSource>() : new IMixSource[] { microphone });
 
         capture.DataAvailable += (data, flags, devicePosition, qpcPosition) =>
             writer.Write(
@@ -175,6 +179,85 @@ internal static class Program
             try { capture.StopRecording(); } catch { }
             try { microphone?.Dispose(); } catch { }
             try { keepAlive?.Dispose(); } catch { }
+        }
+
+        if (writer.HasFailed && !string.IsNullOrWhiteSpace(writer.FailureMessage))
+            Console.Error.WriteLine($"Audio pipe closed: {writer.FailureMessage}");
+        return 0;
+    }
+
+    // The microphone is optional. If it can't start (unplugged, blocked by
+    // Windows privacy settings), game audio still records.
+    private static MicrophoneSource? OpenMicrophone(MMDeviceEnumerator enumerator, string? micName, float micVolume)
+    {
+        if (string.IsNullOrWhiteSpace(micName)) return null;
+        try
+        {
+            return new MicrophoneSource(ResolveDevice(enumerator, DataFlow.Capture, micName), micVolume);
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                $"Microphone unavailable ({exception.Message}). If Windows blocks it, allow desktop apps " +
+                "to use the microphone in Settings → Privacy & security → Microphone. Game audio continues.");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Game-only recording: the game's own sound is the timed stream (same
+    /// timestamp alignment as whole-PC capture, so sync is unchanged), and the
+    /// microphone and any extra apps are mixed in. When no game is running the
+    /// stream carries on as silence plus microphone/extra apps.
+    /// </summary>
+    private static int CaptureApps(string pipeName, string? micName, float gameVolume, float micVolume,
+                                   string[] extraApps, float otherVolume)
+    {
+        int pipeBufferBytes = OutputSampleRate * OutputChannels * sizeof(short);
+        using var pipe = new NamedPipeServerStream(
+            pipeName, PipeDirection.Out, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous,
+            pipeBufferBytes, pipeBufferBytes);
+        using var enumerator = new MMDeviceEnumerator();
+        MicrophoneSource? microphone = OpenMicrophone(enumerator, micName, micVolume);
+        var extras = extraApps.Select(exe => new AppAudioSource(exe, otherVolume)).ToList();
+        var mixers = new List<IMixSource>(extras);
+        if (microphone is not null) mixers.Add(microphone);
+
+        using var writer = new DirectPcmPipeWriter(
+            pipe, WaveFormat.CreateIeeeFloatWaveFormat(OutputSampleRate, OutputChannels), gameVolume, mixers);
+        using var game = new GameAudioTracker((stereo, frames, silent, discontinuity, devicePosition, qpc) =>
+            writer.Write(MemoryMarshal.AsBytes(stereo), silent, discontinuity, devicePosition, qpc));
+
+        Console.Error.WriteLine($"Waiting for FFmpeg on audio pipe '{pipeName}' (game sound only).");
+        pipe.WaitForConnection();
+        microphone?.Start();
+        writer.Start();
+        Console.Error.WriteLine(
+            "Recording game sound only" +
+            (extras.Count > 0 ? $", plus {string.Join(", ", extraApps)}" : "") +
+            (microphone is null ? "." : $" and microphone '{microphone.Name}'."));
+
+        long nextPoll = 0;
+        try
+        {
+            while (pipe.IsConnected && !writer.HasFailed)
+            {
+                long now = Environment.TickCount64;
+                if (now >= nextPoll)
+                {
+                    ProcessTable table = ProcessTable.Take();
+                    game.Poll(table);
+                    foreach (var extra in extras) extra.Poll(table);
+                    nextPoll = now + 1000;
+                }
+                writer.FillStall();
+                Thread.Sleep(20);
+            }
+        }
+        finally
+        {
+            foreach (var extra in extras) try { extra.Dispose(); } catch { }
+            try { microphone?.Dispose(); } catch { }
         }
 
         if (writer.HasFailed && !string.IsNullOrWhiteSpace(writer.FailureMessage))
@@ -233,7 +316,7 @@ internal static class SilentKeepAlive
 /// the microphone stays in sync with the game even though the two devices run
 /// on slightly different clocks.
 /// </summary>
-internal sealed class MicrophoneSource : IDisposable
+internal sealed class MicrophoneSource : IMixSource, IDisposable
 {
     private const int TargetRate = 48000;
     private const int MaxBacklogFrames = TargetRate / 5;      // 200 ms: trim beyond this
@@ -412,7 +495,7 @@ internal sealed class DirectPcmPipeWriter : IDisposable
     private readonly NamedPipeServerStream pipe;
     private readonly WaveFormat sourceFormat;
     private readonly float gameVolume;
-    private readonly MicrophoneSource? microphone;
+    private readonly IReadOnlyList<IMixSource> mixers;
     private readonly object writeLock = new();
     // Where the written stream has reached on the real-time (QPC) timeline:
     // its start plus everything written so far. Comparing each packet with
@@ -433,12 +516,12 @@ internal sealed class DirectPcmPipeWriter : IDisposable
     private string? failureMessage;
 
     public DirectPcmPipeWriter(NamedPipeServerStream pipe, WaveFormat sourceFormat,
-                               float gameVolume, MicrophoneSource? microphone)
+                               float gameVolume, IReadOnlyList<IMixSource> mixers)
     {
         this.pipe = pipe;
         this.sourceFormat = sourceFormat;
         this.gameVolume = gameVolume;
-        this.microphone = microphone;
+        this.mixers = mixers;
         if (sourceFormat.SampleRate != 48000 ||
             sourceFormat.Channels != 2 ||
             sourceFormat.BitsPerSample != 32)
@@ -520,7 +603,7 @@ internal sealed class DirectPcmPipeWriter : IDisposable
             else
                 for (int index = 0; index < samples; index++)
                     mixSpan[index] = game[index] * gameVolume;
-            microphone?.MixInto(mixSpan, frames);
+            foreach (IMixSource mixer in mixers) mixer.MixInto(mixSpan, frames);
 
             for (int index = 0; index < samples; index++)
             {
