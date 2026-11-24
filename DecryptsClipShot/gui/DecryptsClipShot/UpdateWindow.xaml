@@ -1,0 +1,38 @@
+<Window x:Class="DecryptsClipShot.UpdateWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Update available" Width="480" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" WindowStyle="None"
+        ShowInTaskbar="False" Background="{StaticResource PageBrush}"
+        BorderBrush="#1F1F23" BorderThickness="1">
+    <StackPanel Margin="28,24,28,24">
+        <StackPanel Orientation="Horizontal">
+            <Image Width="40" Height="40" Source="/Assets/clipshot-logo-transparent.png" RenderOptions.BitmapScalingMode="HighQuality"/>
+            <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                <TextBlock Text="Update available" FontSize="20" FontWeight="Bold"/>
+                <TextBlock x:Name="VersionText" Text="ClipShot 1.0.2 is ready (you have 1.0.1)" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,2,0,0"/>
+            </StackPanel>
+        </StackPanel>
+
+        <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10"
+                Padding="16,12" Margin="0,18,0,0" MaxHeight="220">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <TextBlock x:Name="NotesText" Text="" Foreground="#E4E4E7" FontSize="12.5" TextWrapping="Wrap" LineHeight="19"/>
+            </ScrollViewer>
+        </Border>
+
+        <TextBlock x:Name="RecordingWarning" Visibility="Collapsed" Foreground="#E5484D" FontSize="12" Margin="0,12,0,0" TextWrapping="Wrap"
+                   Text="ClipShot is recording. Updating stops recording; your saved clips are kept."/>
+
+        <StackPanel x:Name="ProgressPanel" Visibility="Collapsed" Margin="0,16,0,0">
+            <ProgressBar x:Name="DownloadProgress" Height="8" Minimum="0" Maximum="1" Foreground="{StaticResource PrimaryBrush}" Background="#26262B" BorderThickness="0"/>
+            <TextBlock x:Name="ProgressText" Text="Downloading…" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,6,0,0"/>
+        </StackPanel>
+
+        <DockPanel Margin="0,20,0,0" LastChildFill="False">
+            <Button x:Name="SkipButton" DockPanel.Dock="Left" Content="Skip this version" Style="{StaticResource LinkButton}" VerticalAlignment="Center" Click="Skip_Click"/>
+            <Button x:Name="UpdateButton" DockPanel.Dock="Right" Content="Update now" Style="{StaticResource PrimaryButton}" Padding="22,10" Click="Update_Click" IsDefault="True"/>
+            <Button x:Name="LaterButton" DockPanel.Dock="Right" Content="Later" Style="{StaticResource SecondaryButton}" Padding="22,10" Margin="0,0,10,0" Click="Later_Click"/>
+        </DockPanel>
+    </StackPanel>
+</Window>

@@ -1,0 +1,153 @@
+# Builds the installer on GitHub's own Windows computers and publishes it as a
+# release whenever you push a version tag, for example:
+#
+#   git tag v1.0.7
+#   git push origin v1.0.7
+#
+# Players then download DecryptsClipShot-Setup.exe from the repository's
+# Releases page. Nobody (including you) has to run build_msi.bat by hand.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, e.g. 1.0.1 (makes a test build without publishing)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+
+      - name: Work out the version number
+        shell: pwsh
+        run: |
+          $version = "${{ github.event.inputs.version }}"
+          if (-not $version) { $version = "${{ github.ref_name }}".TrimStart("v") }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Version '$version' must look like 1.2.3 (tag it as v1.2.3)."
+          }
+          "CLIPSHOT_VERSION=$version" | Out-File $env:GITHUB_ENV -Append
+          Write-Host "Building version $version"
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Set up the C compiler (MSVC)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Ninja
+        run: choco install ninja -y --no-progress
+
+      # FFmpeg isn't stored in the repository (it's large); fetch a Windows
+      # build. GPL builds include libx264, ClipShot's default encoder.
+      # BtbN rebuilds its "latest" release daily and files can be missing for
+      # a few minutes while that happens, so retry, then fall back to the
+      # newest dated build that has the file.
+      - name: Download FFmpeg
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $name = "ffmpeg-n8.1-latest-win64-gpl-8.1"
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; "User-Agent" = "ClipShot-build" }
+          $ok = $false
+          for ($try = 1; $try -le 3 -and -not $ok; $try++) {
+            try {
+              Invoke-WebRequest "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/$name.zip" -OutFile ffmpeg.zip
+              $ok = $true
+            } catch {
+              Write-Host "Download attempt $try failed: $($_.Exception.Message)"
+              Start-Sleep -Seconds 20
+            }
+          }
+          if (-not $ok) {
+            Write-Host "Looking for the file in recent dated builds instead"
+            $releases = Invoke-RestMethod "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases?per_page=10" -Headers $headers
+            foreach ($release in $releases) {
+              $asset = $release.assets | Where-Object { $_.name -eq "$name.zip" } | Select-Object -First 1
+              if ($asset) {
+                Write-Host "Using $($release.tag_name)"
+                Invoke-WebRequest $asset.browser_download_url -OutFile ffmpeg.zip
+                $ok = $true
+                break
+              }
+            }
+          }
+          if (-not $ok) { throw "Could not download FFmpeg ($name)." }
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-download
+          Copy-Item "ffmpeg-download\$name\bin\ffmpeg.exe" .
+
+      - name: Build the installer
+        shell: cmd
+        run: call build_msi.bat %CLIPSHOT_VERSION%
+
+      - name: Keep the files (downloadable from the workflow run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: DecryptsClipShot-${{ env.CLIPSHOT_VERSION }}
+          path: |
+            dist/Installer/DecryptsClipShot-Setup.exe
+            dist/Installer/DecryptsClipShot-Setup.msi
+
+      # The release text (and the in-app update popup) uses this version's
+      # section of CHANGELOG.md, e.g. "## 1.0.2".
+      - name: Write release notes
+        shell: pwsh
+        run: |
+          $changelog = Get-Content CHANGELOG.md -Raw
+          $pattern = "(?ms)^## " + [regex]::Escape($env:CLIPSHOT_VERSION) + "\s*\r?\n(.*?)(?=^## |\z)"
+          $match = [regex]::Match($changelog, $pattern)
+          if (-not $match.Success -or -not $match.Groups[1].Value.Trim()) {
+            # Stop instead of publishing the wrong notes. Add a "## <version>"
+            # section to CHANGELOG.md, commit it, and push the tag again.
+            throw "CHANGELOG.md has no '## $env:CLIPSHOT_VERSION' section."
+          }
+          $notes = $match.Groups[1].Value.Trim()
+          $download = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME/DecryptsClipShot-Setup.exe"
+          $body = @(
+            "## What's new", "", $notes, "",
+            "## Download",
+            "**[DecryptsClipShot-Setup.exe]($download)**: download it, open it, click **Install**.", "",
+            "Already have ClipShot? It offers this update automatically when it opens. Your clips and settings are kept.", "",
+            "Windows may show ""Windows protected your PC"" because the download isn't code-signed yet. Click **More info**, then **Run anyway**."
+          ) -join "`n"
+          Set-Content release-notes.md -Value $body -Encoding utf8
+
+      # Old releases (including hidden drafts left behind when a tag was
+      # deleted) can share this tag. Updating one kept its old text, so any
+      # release with this tag is replaced with a fresh one.
+      - name: Publish the GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $rows = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --paginate --jq '.[] | [.id, .tag_name] | @tsv'
+          foreach ($row in ($rows -split "`n" | Where-Object { $_ })) {
+            $id, $releaseTag = $row.Trim() -split "`t"
+            if ($releaseTag -ne $tag) { continue }
+            Write-Host "Removing an older release that used $tag (id $id)"
+            gh api -X DELETE "repos/$env:GITHUB_REPOSITORY/releases/$id"
+          }
+          gh release create $tag `
+            --title "Decrypt's ClipShot $env:CLIPSHOT_VERSION" `
+            --notes-file release-notes.md `
+            --verify-tag --latest `
+            dist/Installer/DecryptsClipShot-Setup.exe dist/Installer/DecryptsClipShot-Setup.msi

@@ -1,0 +1,174 @@
+<Window x:Class="DecryptsClipShot.Setup.SetupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Decrypt's ClipShot Setup"
+        Width="600" SizeToContent="Height" MinHeight="460"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None" ResizeMode="NoResize"
+        Background="{StaticResource PageBrush}"
+        BorderBrush="#4A2A2A" BorderThickness="1"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        Closing="Window_Closing"
+        Loaded="Window_Loaded">
+    <Window.Resources>
+        <!-- Large call-to-action button. -->
+        <Style x:Key="BigButton" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+            <Setter Property="FontSize" Value="17"/>
+            <Setter Property="Padding" Value="0,14"/>
+            <Setter Property="Width" Value="280"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="BigSecondaryButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="Padding" Value="0,12"/>
+            <Setter Property="Width" Value="280"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+        </Style>
+        <!-- Text that behaves like a web link. -->
+        <Style x:Key="LinkButton" TargetType="Button">
+            <Setter Property="Foreground" Value="{StaticResource AccentTextBrush}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <TextBlock x:Name="Label" Text="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}"
+                                   FontSize="{TemplateBinding FontSize}" Background="Transparent"/>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Label" Property="TextDecorations" Value="Underline"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Label" Property="TextDecorations" Value="Underline"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="Centered" TargetType="TextBlock" BasedOn="{StaticResource Body}">
+            <Setter Property="TextAlignment" Value="Center"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="FontSize" Value="14"/>
+        </Style>
+    </Window.Resources>
+
+    <DockPanel>
+        <!-- Title bar -->
+        <Grid DockPanel.Dock="Top" Height="34" Background="Transparent" MouseLeftButtonDown="DragArea_MouseLeftButtonDown">
+            <TextBlock Text="Decrypt's ClipShot Setup" Foreground="#7D6767" FontSize="12" VerticalAlignment="Center" Margin="14,0,0,0"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="—" Style="{StaticResource TitleBarButton}" Click="Minimize_Click" ToolTip="Minimize"/>
+                <Button Content="✕" Style="{StaticResource TitleBarButton}" Click="Close_Click" ToolTip="Close"/>
+            </StackPanel>
+        </Grid>
+
+        <Grid Margin="48,6,48,34">
+
+            <!-- ===== Home: install or update ===== -->
+            <StackPanel x:Name="HomePage">
+                <Image Source="pack://application:,,,/Assets/clipshot-logo-transparent.png" Width="84" Height="84"
+                       RenderOptions.BitmapScalingMode="HighQuality" Margin="0,10,0,16"/>
+                <TextBlock x:Name="HomeTitle" Text="Decrypt's ClipShot" FontSize="28" FontWeight="Bold" HorizontalAlignment="Center"/>
+                <TextBlock x:Name="HomeBody" Style="{StaticResource Centered}" Margin="0,8,0,28"
+                           Text="Save your best Fortnite moments automatically."/>
+
+                <Button x:Name="InstallButton" Content="Install" Style="{StaticResource BigButton}" Click="Install_Click" IsDefault="True" IsEnabled="False"/>
+                <TextBlock x:Name="PreparingText" Style="{StaticResource Centered}" FontSize="12" Margin="0,10,0,0" Text="Getting ready…"/>
+
+                <StackPanel x:Name="AgreementLine" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,14,0,0">
+                    <TextBlock Text="By installing, you agree to the " Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+                    <Button Content="license terms" Style="{StaticResource LinkButton}" FontSize="12" Click="ShowLicense_Click"/>
+                    <TextBlock Text="." Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+                </StackPanel>
+
+                <Button x:Name="OptionsToggle" Content="Install options ▾" Style="{StaticResource LinkButton}" Margin="0,22,0,0" Click="ToggleOptions_Click"/>
+
+                <!-- Optional settings; most people never open this. -->
+                <Border x:Name="OptionsPanel" Visibility="Collapsed" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="1" CornerRadius="12" Padding="20,16" Margin="0,14,0,0">
+                    <StackPanel>
+                        <CheckBox x:Name="DesktopShortcutCheck" IsChecked="True" Content="Put a shortcut on my desktop" Margin="0,0,0,12"/>
+                        <CheckBox x:Name="StartWithWindowsCheck" Content="Start ClipShot when my PC starts" Margin="0,0,0,16"/>
+                        <TextBlock Text="Install folder" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,6"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="InstallPathBox" Style="{StaticResource InputStyle}" FontSize="12" TextChanged="InstallPath_TextChanged"/>
+                            <Button Grid.Column="1" Content="Change…" Style="{StaticResource SecondaryButton}" MinWidth="0" Padding="14,8" Margin="8,0,0,0" Click="Browse_Click"/>
+                        </Grid>
+                        <TextBlock x:Name="LocationError" Foreground="{StaticResource AccentTextBrush}" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" Visibility="Collapsed"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- ===== Already installed ===== -->
+            <StackPanel x:Name="MaintenancePage" Visibility="Collapsed">
+                <Image Source="pack://application:,,,/Assets/clipshot-logo-transparent.png" Width="84" Height="84"
+                       RenderOptions.BitmapScalingMode="HighQuality" Margin="0,10,0,16"/>
+                <TextBlock x:Name="MaintenanceTitle" Text="ClipShot is already installed" FontSize="26" FontWeight="Bold"
+                           HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
+                <TextBlock x:Name="MaintenanceBody" Style="{StaticResource Centered}" Margin="0,8,0,28"
+                           Text="What would you like to do?"/>
+                <Button x:Name="RepairButton" Content="Fix ClipShot" Style="{StaticResource BigButton}" Click="Repair_Click"/>
+                <TextBlock x:Name="RepairHint" Style="{StaticResource Centered}" FontSize="12" Margin="0,8,0,18"
+                           Text="Use this if ClipShot won't open or is acting strange."/>
+                <Button Content="Remove ClipShot" Style="{StaticResource BigSecondaryButton}" Click="Uninstall_Click"/>
+                <TextBlock Style="{StaticResource Centered}" FontSize="12" Margin="0,8,0,0"
+                           Text="Your saved clips are never deleted."/>
+            </StackPanel>
+
+            <!-- ===== License ===== -->
+            <DockPanel x:Name="LicensePage" Visibility="Collapsed" Height="380">
+                <TextBlock DockPanel.Dock="Top" Text="License terms" FontSize="24" FontWeight="Bold" Margin="0,4,0,14"/>
+                <Button DockPanel.Dock="Bottom" Content="Back" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Right"
+                        Margin="0,16,0,0" Click="CloseLicense_Click"/>
+                <Border Background="#0F0A0A" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="4">
+                    <RichTextBox x:Name="LicenseBox" IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                 Foreground="#E6DADA" Padding="10" FontFamily="Segoe UI" FontSize="12.5"
+                                 VerticalScrollBarVisibility="Auto"/>
+                </Border>
+            </DockPanel>
+
+            <!-- ===== Working ===== -->
+            <StackPanel x:Name="ProgressPage" Visibility="Collapsed" Margin="0,30,0,30">
+                <Image Source="pack://application:,,,/Assets/clipshot-logo-transparent.png" Width="64" Height="64"
+                       RenderOptions.BitmapScalingMode="HighQuality" Margin="0,0,0,20"/>
+                <TextBlock x:Name="ProgressTitle" Text="Installing ClipShot…" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center"/>
+                <TextBlock x:Name="ProgressStatus" Style="{StaticResource Centered}" Margin="0,8,0,28" Text="Getting ready…"/>
+                <ProgressBar x:Name="InstallProgress" Minimum="0" Maximum="100" Value="0" Height="12"/>
+                <TextBlock x:Name="ProgressHint" Style="{StaticResource Centered}" FontSize="12" Margin="0,14,0,18"
+                           Text="This usually takes less than a minute."/>
+                <Button x:Name="CancelLink" Content="Cancel" Style="{StaticResource LinkButton}" Click="CancelInstall_Click"/>
+            </StackPanel>
+
+            <!-- ===== Done ===== -->
+            <StackPanel x:Name="DonePage" Visibility="Collapsed">
+                <Border x:Name="DoneBadge" Width="76" Height="76" CornerRadius="38" Background="#123524" Margin="0,16,0,18">
+                    <TextBlock x:Name="DoneIcon" Text="✓" Foreground="{StaticResource SuccessBrush}" FontSize="38" FontWeight="Bold"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <TextBlock x:Name="DoneTitle" Text="All set!" FontSize="28" FontWeight="Bold" HorizontalAlignment="Center"/>
+                <TextBlock x:Name="DoneBody" Style="{StaticResource Centered}" Margin="0,8,0,28"
+                           Text="ClipShot is installed and ready to go."/>
+                <Button x:Name="DonePrimaryButton" Content="Open ClipShot" Style="{StaticResource BigButton}" Click="DonePrimary_Click" IsDefault="True"/>
+                <Button x:Name="DoneSecondaryLink" Content="Close" Style="{StaticResource LinkButton}" Margin="0,16,0,0" Click="DoneSecondary_Click"/>
+                <Border x:Name="TipCard" Background="#1E0F0F" BorderBrush="#5A2525" BorderThickness="1" CornerRadius="12" Padding="18,14" Margin="0,26,0,0">
+                    <DockPanel>
+                        <TextBlock Text="★" Foreground="{StaticResource AccentTextBrush}" FontSize="16" Margin="0,0,14,0" VerticalAlignment="Top"/>
+                        <TextBlock Style="{StaticResource Body}" FontSize="12.5">
+                            <Run Text="Tip:" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold"/>
+                            <Run Text="press F8 in game to save a clip. To catch trickshots automatically, turn on"/>
+                            <Run Text="Record Replays" Foreground="{StaticResource TextBrush}"/>
+                            <Run Text="in Fortnite's settings."/>
+                        </TextBlock>
+                    </DockPanel>
+                </Border>
+            </StackPanel>
+        </Grid>
+    </DockPanel>
+</Window>

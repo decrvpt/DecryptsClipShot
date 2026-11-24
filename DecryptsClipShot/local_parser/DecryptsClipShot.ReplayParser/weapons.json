@@ -1,0 +1,176 @@
+{
+  "updated": "2026-11-16 (Fortnite v43.10, Treasure Hunters)",
+  "howToUpdate": "Fortnite replay tags name weapons by internal codename (e.g. Weapon.Ranged.Pistol.Slingshot.HarmlessThrift), not by the name players see. Each entry lists codename pieces to look for in the tag after 'Weapon.Ranged.'; matching ignores case, dots and underscores, and the longest match wins. When Meter Checker shows only a class name like 'Pistol', hover the weapon to see its tag, add an entry here, and release a new version. Ammo 'Heavy' or sniper=true makes a final kill count as an automatic trickshot. Snipers without a scope (Hunting Rifle) set \"scope\": false so aimed shots show as 'Aimed (iron sights)'. Players can also name unknown weapons in Meter Checker; those are saved to %LOCALAPPDATA%\\\\Decrypts ClipShot\\\\weapons.json and checked first.",
+  "weapons": [
+    {
+      "name": "Usopp's Slingshot",
+      "mythicName": "Usopp's Galaxy Slingshot",
+      "match": [
+        "Slingshot.HarmlessThrift",
+        "HarmlessThrift"
+      ],
+      "class": "Pistol",
+      "ammo": "Heavy",
+      "sniper": false,
+      "source": "Observed in a replay tag; codename confirmed by the game's icon asset T_Icon_Weapons_Launcher_Slingshot_HarmlessThrift (Blitz.gg). Galaxy (Mythic) shares the codename."
+    },
+    {
+      "name": "Cobalt Slingshot",
+      "match": [
+        "Slingshot.Cobalt",
+        "CobaltSlingshot"
+      ],
+      "class": "Pistol",
+      "ammo": "",
+      "sniper": false,
+      "source": "Simpsons slingshot (Reload; vaulted in Battle Royale). Codename guessed; verify against a replay."
+    },
+    {
+      "name": "Assault Rifle",
+      "match": [
+        "Assault.Standard"
+      ],
+      "class": "Assault Rifle",
+      "ammo": "Medium",
+      "sniper": false,
+      "source": "Observed in a replay tag."
+    },
+    {
+      "name": "Flint-Knock Pistol",
+      "match": [
+        "Flintlock",
+        "FlintKnock",
+        "Pistol.Single.Shot"
+      ],
+      "class": "Pistol",
+      "ammo": "Heavy",
+      "sniper": false,
+      "source": "Icon asset T-Icon-Weapons-SK-Flintlock-Pistol-Single-Shot (Blitz.gg)."
+    },
+    {
+      "name": "Hand Cannon",
+      "match": [
+        "HandCannon",
+        "Deagle"
+      ],
+      "class": "Pistol",
+      "ammo": "Heavy",
+      "sniper": false,
+      "source": "Heavy-ammo pistol in past seasons. Codename guessed."
+    },
+    {
+      "name": "Hunting Rifle",
+      "match": [
+        "Bolt.Rifle",
+        "BoltRifle",
+        "Figment.Sniper.NoScope",
+        "Sniper.NoScope",
+        "HuntingRifle"
+      ],
+      "class": "Sniper Rifle",
+      "ammo": "Heavy",
+      "sniper": true,
+      "source": "Icon asset T_Icon_Weapons_SK_Bolt_Rifle_2; OG weapon IDs WID_Figment_Sniper_NoScope_Athena_* (Fortnite Wiki). Classic ID WID_Sniper_NoScope_Athena. Has no scope: 'NoScope' in its codename is the weapon, not the shot.",
+      "scope": false
+    },
+    {
+      "name": "Heavy Impact Sniper Rifle",
+      "match": [
+        "Moon.Flax",
+        "MoonFlax"
+      ],
+      "class": "Sniper Rifle",
+      "ammo": "Heavy",
+      "sniper": true,
+      "source": "'Sniper Moon Flax' in the game files (Fortnite Wiki)."
+    },
+    {
+      "name": "Lawless Heavy Impact Tracking Rifle",
+      "match": [
+        "TrackerSniper",
+        "Tracker.Sniper"
+      ],
+      "class": "Sniper Rifle",
+      "ammo": "Heavy",
+      "sniper": true,
+      "source": "Icon asset T_Icon_Weapons_Exotic_TrackerSniper (Blitz.gg)."
+    },
+    {
+      "name": "Heavy Sniper Rifle",
+      "match": [
+        "50cal",
+        "Barret",
+        "Barrett",
+        "Sniper.Heavy",
+        "HeavySniper"
+      ],
+      "class": "Sniper Rifle",
+      "ammo": "Heavy",
+      "sniper": true,
+      "source": "Icon asset T-Icon-Weapons-SK-50cal-Barret-Sniper (Blitz.gg).",
+      "rarities": [
+        "Epic",
+        "Legendary"
+      ]
+    },
+    {
+      "name": "Suppressed Sniper Rifle",
+      "match": [
+        "Sniper.Suppressed",
+        "Suppressed.Scope",
+        "BoltAction.Scope.Suppressed",
+        "SuppressedSniper"
+      ],
+      "class": "Sniper Rifle",
+      "ammo": "Heavy",
+      "sniper": true,
+      "source": "Game IDs wid_sniper_suppressed_scope_athena_* and Sniper_BoltAction_Scope_Suppressed_Athena_* (datamined, Breakflip / Fortnite News)."
+    },
+    {
+      "name": "Bolt-Action Sniper Rifle",
+      "match": [
+        "Sniper.BoltAction",
+        "BoltAction.Scope",
+        "BoltActionSniper"
+      ],
+      "class": "Sniper Rifle",
+      "ammo": "Heavy",
+      "sniper": true,
+      "source": "Game ID WID_Sniper_BoltAction_Scope_Athena_* (classic). Verify the tag form in a replay."
+    },
+    {
+      "name": "Semi-Auto Sniper Rifle",
+      "match": [
+        "Sniper.Standard.Scope",
+        "Sniper.Standard",
+        "SemiAutoSniper"
+      ],
+      "class": "Sniper Rifle",
+      "ammo": "Heavy",
+      "sniper": true,
+      "source": "Game ID WID_Sniper_Standard_Scope_Athena_* (classic). Verify the tag form in a replay."
+    },
+    {
+      "name": "Automatic Sniper Rifle",
+      "match": [
+        "SpecialSilencedSniperRifle",
+        "Sniper.Automatic",
+        "AutoSniper"
+      ],
+      "class": "Sniper Rifle",
+      "ammo": "Medium",
+      "sniper": true,
+      "source": "Icon asset T-Icon-Weapons-SpecialSilencedSniperRifle (Blitz.gg). Uses medium ammo but is a sniper."
+    },
+    {
+      "name": "Boom Sniper Rifle",
+      "match": [
+        "BoomSniper"
+      ],
+      "class": "Sniper Rifle",
+      "ammo": "",
+      "sniper": true,
+      "source": "Icon asset BoomSniperWeapon (Blitz.gg)."
+    }
+  ]
+}
