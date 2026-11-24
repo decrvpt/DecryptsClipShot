@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.10
+
+- **Sharper clips.** Clips looked soft in busy scenes because the size limit added in 1.0.5 was too tight. Every Clip size setting now allows more detail: a 2-minute 1080p 60 FPS clip is about 300 MB on Balanced (was 180 MB), 150 MB on Smaller and 500 MB on Best quality. Change it in Settings → Recording → **Clip size**.
+
 ## 1.0.9
 
 - **Clips show only your game.** Notifications, other windows and your desktop stay out of clips. ClipShot records Fortnite's window, or the game you have open full screen, and switches to the whole screen when no game is open. Change it in Settings → Recording → **What video to record**.

@@ -626,7 +626,7 @@
                                                                             <ComboBoxItem Content="Best quality (big files)" Tag="large"/>
                                                                             <ComboBoxItem Content="No limit (very big files)" Tag="off"/>
                                                                         </ComboBox>
-                                                                        <TextBlock Text="2 minutes at 1080p 60 FPS: about 110 MB on Smaller, 180 MB on Balanced, 320 MB on Best quality." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                                                        <TextBlock Text="2 minutes at 1080p 60 FPS: about 150 MB on Smaller, 300 MB on Balanced, 500 MB on Best quality." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"/>
                                                                     </StackPanel>
                                 <DockPanel Margin="0,0,0,2">
                                                                         <TextBlock x:Name="ClipLengthValueText" DockPanel.Dock="Right" Text="90 seconds" FontSize="13" FontWeight="SemiBold"/>

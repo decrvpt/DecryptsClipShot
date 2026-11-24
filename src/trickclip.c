@@ -1070,14 +1070,15 @@ static void apply_clip_size(const AppConfig *config, int height, wchar_t *option
     const wchar_t *encoder = config->video_encoder;
 
     if (_wcsicmp(config->clip_size, L"off") == 0 || wcsstr(options, L"-maxrate")) return;
-    base_kbps = _wcsicmp(config->clip_size, L"small") == 0 ? 10000.0
-              : _wcsicmp(config->clip_size, L"large") == 0 ? 28000.0 : 16000.0; /* at 1080p60 */
+    /* At 1080p60. 1.0.5's 10/16/28 Mbps looked soft in busy Fortnite scenes. */
+    base_kbps = _wcsicmp(config->clip_size, L"small") == 0 ? 12000.0
+              : _wcsicmp(config->clip_size, L"large") == 0 ? 40000.0 : 24000.0;
     if (height <= 0) height = 1080;
     scale = pow(((double)height * height) / (1080.0 * 1080.0), 0.8);
     if (config->framerate <= 30) scale *= 0.65;
     max_kbps = (int)(base_kbps * scale);
     if (max_kbps < 3000) max_kbps = 3000;
-    target_kbps = max_kbps * 3 / 4;
+    target_kbps = max_kbps * 17 / 20; /* aim at 85% of the ceiling */
 
     if (_wcsicmp(encoder, L"h264_amf") == 0) {
         strip_option(options, L"-rc");
