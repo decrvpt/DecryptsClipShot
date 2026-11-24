@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.9
+
+- **Clips show only your game.** Notifications, other windows and your desktop stay out of clips. ClipShot records Fortnite's window, or the game you have open full screen, and switches to the whole screen when no game is open. Change it in Settings → Recording → **What video to record**.
+- **Fortnite revival projects are recognized.** Older Fortnite builds used by revivals now count as Fortnite for automatic trickshots, game sound and game video.
+- **Fixed recording not starting until Fortnite opened.** Some installs still had "Only record while Fortnite is running" turned on from an older version. It's turned off once by this update; you can turn it back on in Settings → Fortnite.
+- **Cleaner Settings.** Settings now has tabs (General, Recording, Audio, Fortnite, Shortcuts and Advanced) instead of one long page, and Save settings is always at the bottom.
+
 ## 1.0.8
 
 - **Clips record only your game's sound.** Music, YouTube, calls and other apps stay out of your clips. ClipShot records Fortnite's sound, or the game you have open full screen in any other game. Change it in Settings → Audio → **What sound to record**.

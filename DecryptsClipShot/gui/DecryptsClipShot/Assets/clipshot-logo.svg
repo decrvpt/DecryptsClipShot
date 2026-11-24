@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1600">
-  <g fill="#990000">
-    <path fill-rule="evenodd" d="M800 0a800 800 0 1 1 0 1600A800 800 0 0 1 800 0Zm0 129a671 671 0 1 0 0 1342A671 671 0 0 0 800 129Z"/>
-    <rect x="729" y="160" width="142" height="569"/>
-    <rect x="729" y="871" width="142" height="569"/>
-    <rect x="160" y="729" width="569" height="142"/>
-    <rect x="871" y="729" width="569" height="142"/>
-  </g>
-</svg>

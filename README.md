@@ -77,6 +77,8 @@ Extra options for experienced users are under **Show advanced settings**. You do
 
 **No sound in clips.** In Settings → Audio, turn on **Record game sound** and choose **Default Windows output**. If your game sound plays through a different headset or speaker, pick that device.
 
+**Notifications or my desktop show up in clips (or the clip is the wrong window).** Settings → Recording → **What video to record**: **Game window only** records just Fortnite, or the game you have open full screen, and records the whole screen when no game is open. Choose **Whole screen** to record everything.
+
 **Music or Discord is in my clips (or my game sound is missing).** Settings → Audio → **What sound to record**: **Game sound only** records just Fortnite, or the game you have open full screen. Turn on **Also record Discord** or list other apps to add them. Game sound only needs Windows 11; on older Windows, ClipShot records everything playing on your PC.
 
 **My voice isn't in clips.** Turn on **Record my microphone** in Settings → Audio, pick your mic, save, then stop and start ClipShot. If it still doesn't work, open Windows **Settings → Privacy & security → Microphone** and turn on **Let desktop apps access your microphone**.

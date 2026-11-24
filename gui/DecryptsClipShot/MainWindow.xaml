@@ -538,187 +538,226 @@
                         </Grid>
                     </Grid>
 
-                    <ScrollViewer x:Name="SettingsPanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
-                        <StackPanel Margin="0,0,10,18">
+                    <Grid x:Name="SettingsPanel" Visibility="Collapsed">
+                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                        <StackPanel>
                             <TextBlock Text="Settings" FontSize="28" FontWeight="Bold"/>
-                            <TextBlock Text="Recording changes apply the next time the engine starts." Foreground="{StaticResource MutedBrush}" Margin="0,4,0,22"/>
-
-                            <!-- Recording: the settings players actually change. -->
-                            <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="22" Margin="0,0,0,16">
-                                <StackPanel>
-                                    <Grid Margin="0,0,0,6">
-                                        <TextBlock Text="Recording" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                        <Button x:Name="OptimizePerformanceButton" Content="Optimize for my PC" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Right" Click="OptimizeForGameplay_Click"
-                                                ToolTip="Tests your graphics card and picks the smoothest settings."/>
-                                    </Grid>
-                                    <TextBlock Text="Not sure? Click Optimize for my PC, then Save settings." Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,18"/>
-
-                                    <Grid Margin="0,0,0,18">
-                                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                                        <StackPanel Margin="0,0,8,0">
-                                            <TextBlock Text="Quality" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,6"/>
-                                            <ComboBox x:Name="EncoderPresetBox" Style="{StaticResource DarkComboBoxStyle}" SelectionChanged="EncoderSetting_Changed"><ComboBoxItem Content="Balanced (recommended)" Tag="balanced"/><ComboBoxItem Content="Higher quality" Tag="quality"/><ComboBoxItem Content="Smoother gameplay" Tag="performance"/><ComboBoxItem Content="Custom" Tag="custom"/></ComboBox>
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1" Margin="8,0">
-                                            <TextBlock Text="Frame rate" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,6"/>
-                                            <ComboBox x:Name="FpsChoiceBox" Style="{StaticResource DarkComboBoxStyle}" SelectionChanged="FpsChoice_Changed"><ComboBoxItem Content="30 FPS (smoothest gameplay)" Tag="30"/><ComboBoxItem Content="60 FPS (smoother clips)" Tag="60"/></ComboBox>
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="2" Margin="8,0,0,0">
-                                            <TextBlock Text="Resolution" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,6"/>
-                                            <ComboBox x:Name="ResolutionBox" Style="{StaticResource DarkComboBoxStyle}"><ComboBoxItem Content="Full (native)" Tag="0"/><ComboBoxItem Content="1080p (recommended)" Tag="1080"/><ComboBoxItem Content="720p (lightest)" Tag="720"/></ComboBox>
-                                        </StackPanel>
-                                    </Grid>
-
-                                    <StackPanel Margin="0,0,0,18" HorizontalAlignment="Left" Width="320">
-                                        <TextBlock Text="Clip size" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,6"/>
-                                        <ComboBox x:Name="ClipSizeBox" Style="{StaticResource DarkComboBoxStyle}">
-                                            <ComboBoxItem Content="Smaller files" Tag="small"/>
-                                            <ComboBoxItem Content="Balanced (recommended)" Tag="balanced"/>
-                                            <ComboBoxItem Content="Best quality (big files)" Tag="large"/>
-                                            <ComboBoxItem Content="No limit (very big files)" Tag="off"/>
-                                        </ComboBox>
-                                        <TextBlock Text="A 2-minute 1080p 60 FPS clip is about 110 MB on Smaller, 180 MB on Balanced and 320 MB on Best quality. Applies the next time recording starts." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"/>
-                                    </StackPanel>
-
-                                    <DockPanel Margin="0,0,0,2">
-                                        <TextBlock x:Name="ClipLengthValueText" DockPanel.Dock="Right" Text="90 seconds" FontSize="13" FontWeight="SemiBold"/>
-                                        <TextBlock Text="Clip length: how much is saved when you press the shortcut" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
-                                    </DockPanel>
-                                    <Slider x:Name="ClipLengthSlider" Style="{StaticResource DarkSlider}" Minimum="15" Maximum="180" TickFrequency="5" SmallChange="5" LargeChange="15" Value="90" ValueChanged="ClipLengthSlider_ValueChanged" Margin="0,0,0,14"/>
-
-                                    <DockPanel Margin="0,0,0,2">
-                                        <TextBlock x:Name="PostMatchValueText" DockPanel.Dock="Right" Text="15 seconds" FontSize="13" FontWeight="SemiBold"/>
-                                        <TextBlock Text="After a win, keep recording for" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
-                                    </DockPanel>
-                                    <Slider x:Name="PostMatchSlider" Style="{StaticResource DarkSlider}" Minimum="0" Maximum="60" TickFrequency="5" SmallChange="5" LargeChange="10" Value="15" ValueChanged="PostMatchSlider_ValueChanged"/>
-
-                                    <TextBlock x:Name="PerformanceStatusText" Text="Hardware encoding and 1080p capture are recommended while gaming." Foreground="#A1A1AA" FontSize="11" Margin="0,14,0,0" TextWrapping="Wrap"/>
-                                </StackPanel>
-                            </Border>
-
-                            <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="22" Margin="0,0,0,16">
-                                <StackPanel>
-                                    <TextBlock Text="Storage" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,16"/>
-                                    <TextBlock Text="Clip library folder" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                        <TextBox x:Name="ClipFolderBox" Style="{StaticResource InputStyle}" IsReadOnly="True" ToolTip="Where your clips and recordings are saved."/>
-                                        <Button Grid.Column="1" Content="Choose folder" Style="{StaticResource SecondaryButton}" Click="BrowseClipFolder_Click" Margin="10,0,0,0"/>
-                                    </Grid>
-                                    <TextBlock Text="Changing this location affects new clips. Existing clips are not moved automatically." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,10,0,0" TextWrapping="Wrap"/>
-                                </StackPanel>
-                            </Border>
-
-                            <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="22" Margin="0,0,0,16">
-                                <StackPanel>
-                                    <Grid Margin="0,0,0,16"><TextBlock Text="Audio" FontSize="17" FontWeight="SemiBold"/><Button Content="Refresh devices" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Right" Click="RefreshAudioDevices_Click"/></Grid>
-                                    <TextBlock Text="What sound to record" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,6"/>
-                                    <ComboBox x:Name="AudioSourceBox" Style="{StaticResource DarkComboBoxStyle}" Margin="0,0,0,6" SelectionChanged="AudioSource_Changed">
-                                        <ComboBoxItem Content="Game sound only (recommended)" Tag="game"/>
-                                        <ComboBoxItem Content="Everything playing on my PC" Tag="all"/>
-                                    </ComboBox>
-                                    <TextBlock Text="Game sound only keeps music, videos and calls out of your clips. It records Fortnite, or whatever game you have open full screen. Needs Windows 11; on older Windows, ClipShot records everything." Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
-                                    <StackPanel x:Name="ExtraAudioOptions" Margin="0,0,0,16">
-                                        <CheckBox x:Name="DiscordAudioCheck" Content="Also record Discord" Foreground="White" Margin="0,0,0,8"
-                                                  ToolTip="Adds your Discord calls to clips. Your own voice is only included if you record your microphone below."/>
-                                        <TextBlock Text="Other apps to record (optional, for example Spotify.exe; separate with commas)" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
-                                        <TextBox x:Name="OtherAudioAppsBox" Style="{StaticResource InputStyle}"/>
-                                    </StackPanel>
-                                    <StackPanel><CheckBox x:Name="GameAudioCheck" Content="Record game sound" Foreground="White" FontWeight="SemiBold" Margin="0,0,0,8"/><TextBlock Text="Sound device for &quot;Everything playing on my PC&quot; (leave on Default unless you use another headset or speaker)" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/><ComboBox x:Name="GameAudioDeviceBox" Style="{StaticResource DarkComboBoxStyle}" IsEditable="False" ToolTip="The speakers or headset your game sound plays through."/></StackPanel>
-                                    <DockPanel Margin="0,18,0,2">
-                                        <TextBlock x:Name="VolumeValueText" DockPanel.Dock="Right" Text="100%" FontSize="13" FontWeight="SemiBold"/>
-                                        <TextBlock Text="Game volume" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
-                                    </DockPanel>
-                                    <Slider x:Name="VolumeSlider" Style="{StaticResource DarkSlider}" Minimum="0" Maximum="200" TickFrequency="5" SmallChange="5" LargeChange="25" Value="100" ValueChanged="VolumeSlider_ValueChanged"
-                                            ToolTip="How loud the game is in saved clips. 100% is the same as in game."/>
-                                    <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,18,0,16"/>
-                                    <CheckBox x:Name="MicrophoneCheck" Content="Record my microphone" Foreground="White" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                                    <StackPanel x:Name="MicrophoneOptions" IsEnabled="{Binding IsChecked, ElementName=MicrophoneCheck}">
-                                        <StackPanel.Style>
-                                            <Style TargetType="StackPanel">
-                                                <Style.Triggers>
-                                                    <Trigger Property="IsEnabled" Value="False">
-                                                        <Setter Property="Opacity" Value="0.4"/>
-                                                    </Trigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </StackPanel.Style>
-                                        <TextBlock Text="Microphone" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,6"/>
-                                        <ComboBox x:Name="MicrophoneDeviceBox" Style="{StaticResource DarkComboBoxStyle}" IsEditable="False"/>
-                                        <DockPanel Margin="0,16,0,2">
-                                            <TextBlock x:Name="MicVolumeValueText" DockPanel.Dock="Right" Text="100%" FontSize="13" FontWeight="SemiBold"/>
-                                            <TextBlock Text="Microphone volume" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
-                                        </DockPanel>
-                                        <Slider x:Name="MicVolumeSlider" Style="{StaticResource DarkSlider}" Minimum="0" Maximum="200" TickFrequency="5" SmallChange="5" LargeChange="25" Value="100" ValueChanged="VolumeSlider_ValueChanged"/>
-                                        <TextBlock Text="Your voice is mixed into the clip with the game sound. Windows may ask you to allow microphone access." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,8,0,0" TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                    <TextBlock x:Name="AudioDeviceStatusText" Text="Scanning Windows playback devices..." Foreground="#A1A1AA" FontSize="11" Margin="0,14,0,0" TextWrapping="Wrap"/>
-                                    
-                                </StackPanel>
-                            </Border>
-
-                            <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="22" Margin="0,0,0,16">
-                                <StackPanel>
-                                    <TextBlock Text="Controls and automation" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,16"/>
-                                    <TextBlock Text="Manual clip shortcut" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/>
-                                    <Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="HotkeyBox" Style="{StaticResource InputStyle}" IsReadOnly="True"/><Button x:Name="HotkeyCaptureButton" Grid.Column="1" Content="Set shortcut" Style="{StaticResource SecondaryButton}" Click="CaptureHotkey_Click" Margin="10,0,0,0"/></Grid>
-                                    <TextBlock Text="Long recording shortcut (press once to start, again to stop)" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/>
-                                    <Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="LongHotkeyBox" Style="{StaticResource InputStyle}" IsReadOnly="True"/><Button x:Name="LongHotkeyCaptureButton" Grid.Column="1" Content="Set shortcut" Style="{StaticResource SecondaryButton}" Click="CaptureLongHotkey_Click" Margin="10,0,0,0"/></Grid>
-                                    <TextBlock Text="Screenshot shortcut" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/>
-                                    <Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="ShotHotkeyBox" Style="{StaticResource InputStyle}" IsReadOnly="True"/><Button x:Name="ShotHotkeyCaptureButton" Grid.Column="1" Content="Set shortcut" Style="{StaticResource SecondaryButton}" Click="CaptureShotHotkey_Click" Margin="10,0,0,0"/></Grid>
-                                    <CheckBox x:Name="TrickshotScreenshotCheck" Content="Save a screenshot of every trickshot automatically" Foreground="White" Margin="0,0,0,4"/>
-                                    <TextBlock Text="Saves one picture with the swag lines and one with the damage number." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="22,0,0,12" TextWrapping="Wrap"/>
-                                    <CheckBox x:Name="StartOnOpenCheck" Content="Start recording when ClipShot opens" Foreground="White" Margin="0,4"/>
-                                    <CheckBox x:Name="StartWithWindowsCheck" Content="Open ClipShot when Windows starts (in the system tray)" Foreground="White" Margin="0,4"/>
-                                    <CheckBox x:Name="FortniteOnlyCheck" Content="Only record while Fortnite is running" Foreground="White" Margin="0,4"/>
-                                    <TextBlock Text="Off: ClipShot records whatever you play. Fortnite trickshot clips and the Meter Checker work either way." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="22,0,0,8" TextWrapping="Wrap"/>
-                                    <CheckBox x:Name="LocalReplayCheck" Content="Check each match for trickshots automatically" Foreground="White" Margin="0,8,0,4"/>
-                                    <TextBlock Text="After a win, ClipShot checks the final kill and keeps the clip if it was a trickshot." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="22,0,0,5" TextWrapping="Wrap"/>
-                                    <CheckBox x:Name="KeepRejectedCheck" Content="Keep clips that do not qualify" Foreground="White" Margin="0,4"/>
-                                    <CheckBox x:Name="MinimizeToTrayCheck" Content="Minimize ClipShot to the system tray" Foreground="White" Margin="0,8,0,4"/>
-                                    <TextBlock Text="When enabled, the minimize button hides ClipShot while capture continues. Double-click the tray icon to restore it." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="22,0,0,0" TextWrapping="Wrap"/>
-                                    <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,16,0,14"/>
-                                    <CheckBox x:Name="UpdatesCheck" Content="Check for updates when ClipShot opens" Foreground="White" Margin="0,0,0,10"/>
-                                    <StackPanel Orientation="Horizontal">
-                                        <Button x:Name="CheckUpdatesButton" Content="Check for updates now" Style="{StaticResource SecondaryButton}" Click="CheckUpdates_Click"/>
-                                        <TextBlock x:Name="AppVersionText" Text="Version 1.0.0" Foreground="{StaticResource MutedBrush}" FontSize="12" VerticalAlignment="Center" Margin="14,0,0,0"/>
-                                    </StackPanel>
-                                </StackPanel>
-                            </Border>
-                            <!-- Advanced: technical settings most players never need. -->
-                            <Button x:Name="AdvancedToggle" Content="Show advanced settings ▾" Click="AdvancedToggle_Click" HorizontalAlignment="Left" Margin="2,0,0,14" Cursor="Hand">
-                                <Button.Template>
-                                    <ControlTemplate TargetType="Button">
-                                        <TextBlock Text="{TemplateBinding Content}" Foreground="#F07178" FontSize="13" Background="Transparent"/>
-                                    </ControlTemplate>
-                                </Button.Template>
-                            </Button>
-                            <Border x:Name="AdvancedPanel" Visibility="Collapsed" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="22" Margin="0,0,0,16">
-                                <StackPanel>
-                                    <TextBlock Text="Advanced" FontSize="17" FontWeight="SemiBold"/>
-                                    <TextBlock Text="Only change these if you know what they do. Optimize for my PC sets them for you." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,16" TextWrapping="Wrap"/>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                                        <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
-                                        <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,14">
-                                            <TextBlock Text="FFmpeg path (the bundled copy is detected automatically)" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/>
-                                            <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="FfmpegPathBox" Style="{StaticResource InputStyle}"/><Button Grid.Column="1" Content="Browse" Style="{StaticResource SecondaryButton}" Click="BrowseFfmpeg_Click" Margin="10,0,0,0"/><Button Grid.Column="2" Content="Auto configure" Style="{StaticResource SecondaryButton}" Click="AutoConfigureFfmpeg_Click" Margin="8,0,0,0"/></Grid>
-                                        </StackPanel>
-                                        <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,8,14"><TextBlock Text="Video encoder" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/><ComboBox x:Name="EncoderBox" Style="{StaticResource DarkComboBoxStyle}" SelectionChanged="EncoderSetting_Changed"><ComboBoxItem Content="CPU — H.264 (works everywhere)" Tag="libx264"/><ComboBoxItem Content="NVIDIA NVENC" Tag="h264_nvenc"/><ComboBoxItem Content="Windows Media Foundation" Tag="h264_mf"/><ComboBoxItem Content="AMD AMF" Tag="h264_amf"/><ComboBoxItem Content="Intel Quick Sync" Tag="h264_qsv"/></ComboBox></StackPanel>
-                                        <StackPanel Grid.Row="1" Grid.Column="1" Margin="8,0,0,14"><TextBlock Text="Frame rate (custom value)" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/><TextBox x:Name="FpsBox" Style="{StaticResource InputStyle}" TextChanged="FriendlySource_TextChanged"/></StackPanel>
-                                        <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Margin="0,0,0,14"><TextBlock Text="Encoder options (filled automatically; choose Quality → Custom to edit)" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/><TextBox x:Name="EncoderOptionsBox" Style="{StaticResource InputStyle}"/></StackPanel>
-                                        <StackPanel Grid.Row="3" Grid.Column="0" Margin="0,0,8,14"><TextBlock Text="Rolling buffer (seconds)" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/><TextBox x:Name="BufferBox" Style="{StaticResource InputStyle}"/></StackPanel>
-                                        <StackPanel Grid.Row="3" Grid.Column="1" Margin="8,0,0,14"><TextBlock Text="Segment length (seconds)" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/><TextBox x:Name="SegmentBox" Style="{StaticResource InputStyle}"/></StackPanel>
-                                        <StackPanel Grid.Row="4" Grid.Column="0" Margin="0,0,8,0"><TextBlock Text="Clip length (seconds)" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/><TextBox x:Name="ClipLengthBox" Style="{StaticResource InputStyle}" TextChanged="FriendlySource_TextChanged"/></StackPanel>
-                                        <StackPanel Grid.Row="4" Grid.Column="1" Margin="8,0,0,0"><TextBlock Text="Post-match footage (seconds)" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/><TextBox x:Name="PostMatchBox" Style="{StaticResource InputStyle}" TextChanged="FriendlySource_TextChanged"/></StackPanel>
-                                    </Grid>
-                                    <CheckBox x:Name="PrioritizeGameCheck" Content="Limit CPU encoder threads and priority (helps FPS with the CPU encoder)" Foreground="White" Margin="0,16,0,0"/>
-                                </StackPanel>
-                            </Border>
-
-                            <Button Content="Save settings" Padding="28,12" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Click="SaveSettings_Click"/>
+                            <WrapPanel Margin="0,16,0,16">
+                            <Button x:Name="GeneralTabButton" Content="General" Style="{StaticResource TabButton}" Click="SettingsTab_Click" Tag="Active"/>
+                            <Button x:Name="RecordingTabButton" Content="Recording" Style="{StaticResource TabButton}" Click="SettingsTab_Click"/>
+                            <Button x:Name="AudioTabButton" Content="Audio" Style="{StaticResource TabButton}" Click="SettingsTab_Click"/>
+                            <Button x:Name="FortniteTabButton" Content="Fortnite" Style="{StaticResource TabButton}" Click="SettingsTab_Click"/>
+                            <Button x:Name="ShortcutsTabButton" Content="Shortcuts" Style="{StaticResource TabButton}" Click="SettingsTab_Click"/>
+                            <Button x:Name="AdvancedTabButton" Content="Advanced" Style="{StaticResource TabButton}" Click="SettingsTab_Click"/>
+                            </WrapPanel>
                         </StackPanel>
-                    </ScrollViewer>
+                        <ScrollViewer x:Name="SettingsScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <Grid Margin="0,0,10,8">
+                    <StackPanel x:Name="GeneralTab">
+                        <Border Style="{StaticResource Card}" Padding="22" Margin="0,0,0,14">
+                            <StackPanel>
+                                <TextBlock Text="Startup" Style="{StaticResource SettingsHeading}"/>
+                                <CheckBox x:Name="StartOnOpenCheck" Content="Start recording when ClipShot opens" Foreground="White" Margin="0,4"/>
+                                <CheckBox x:Name="StartWithWindowsCheck" Content="Open ClipShot with Windows (in the system tray)" Foreground="White" Margin="0,4"/>
+                                <CheckBox x:Name="MinimizeToTrayCheck" Content="Minimize ClipShot to the system tray" Foreground="White" Margin="0,8,0,4"/>
+                                                                    <TextBlock Text="Minimizing hides ClipShot while it keeps recording. Double-click the tray icon to bring it back." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="22,0,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource Card}" Padding="22" Margin="0,0,0,14">
+                            <StackPanel>
+                                <TextBlock Text="Where clips are saved" Style="{StaticResource SettingsHeading}"/>
+                                <TextBlock Text="Clip library folder" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/>
+                                                                    <Grid>
+                                                                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                                        <TextBox x:Name="ClipFolderBox" Style="{StaticResource InputStyle}" IsReadOnly="True" ToolTip="Where your clips and recordings are saved."/>
+                                                                        <Button Grid.Column="1" Content="Choose folder" Style="{StaticResource SecondaryButton}" Click="BrowseClipFolder_Click" Margin="10,0,0,0"/>
+                                                                    </Grid>
+                                                                    <TextBlock Text="Changing this location affects new clips. Existing clips are not moved automatically." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,10,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource Card}" Padding="22" Margin="0,0,0,14">
+                            <StackPanel>
+                                <TextBlock Text="Updates" Style="{StaticResource SettingsHeading}"/>
+                                <CheckBox x:Name="UpdatesCheck" Content="Check for updates when ClipShot opens" Foreground="White" Margin="0,0,0,10"/>
+                                                                    <StackPanel Orientation="Horizontal">
+                                                                        <Button x:Name="CheckUpdatesButton" Content="Check for updates now" Style="{StaticResource SecondaryButton}" Click="CheckUpdates_Click"/>
+                                                                        <TextBlock x:Name="AppVersionText" Text="Version 1.0.0" Foreground="{StaticResource MutedBrush}" FontSize="12" VerticalAlignment="Center" Margin="14,0,0,0"/>
+                                                                    </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                    <StackPanel x:Name="RecordingTab" Visibility="Collapsed">
+                        <Border Style="{StaticResource Card}" Padding="22" Margin="0,0,0,14">
+                            <StackPanel>
+                                <TextBlock Text="What to record" Style="{StaticResource SettingsHeading}"/>
+                                <TextBlock Text="What video to record" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,6"/>
+                                <ComboBox x:Name="VideoSourceBox" Style="{StaticResource DarkComboBoxStyle}" HorizontalAlignment="Left" Width="360">
+                                    <ComboBoxItem Content="Game window only (recommended)" Tag="game"/>
+                                    <ComboBoxItem Content="Whole screen" Tag="screen"/>
+                                </ComboBox>
+                                <TextBlock Text="Game window only keeps notifications, other windows and your desktop out of clips. It follows Fortnite, or whatever game you have open full screen, and records the whole screen when no game is open." Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource Card}" Padding="22" Margin="0,0,0,14">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,12"><TextBlock Text="Quality" Style="{StaticResource SettingsHeading}" Margin="0"/><Button x:Name="OptimizePerformanceButton" Content="Optimize for my PC" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Right" VerticalAlignment="Top" Click="OptimizeForGameplay_Click"
+                                                ToolTip="Tests your graphics card and picks the smoothest settings."/></Grid>
+                                <TextBlock Text="Not sure? Click Optimize for my PC, then Save." Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,14"/>
+                                <Grid Margin="0,0,0,18">
+                                                                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                                                                        <StackPanel Margin="0,0,8,0">
+                                                                            <TextBlock Text="Quality" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,6"/>
+                                                                            <ComboBox x:Name="EncoderPresetBox" Style="{StaticResource DarkComboBoxStyle}" SelectionChanged="EncoderSetting_Changed"><ComboBoxItem Content="Balanced (recommended)" Tag="balanced"/><ComboBoxItem Content="Higher quality" Tag="quality"/><ComboBoxItem Content="Smoother gameplay" Tag="performance"/><ComboBoxItem Content="Custom" Tag="custom"/></ComboBox>
+                                                                        </StackPanel>
+                                                                        <StackPanel Grid.Column="1" Margin="8,0">
+                                                                            <TextBlock Text="Frame rate" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,6"/>
+                                                                            <ComboBox x:Name="FpsChoiceBox" Style="{StaticResource DarkComboBoxStyle}" SelectionChanged="FpsChoice_Changed"><ComboBoxItem Content="30 FPS (smoothest gameplay)" Tag="30"/><ComboBoxItem Content="60 FPS (smoother clips)" Tag="60"/></ComboBox>
+                                                                        </StackPanel>
+                                                                        <StackPanel Grid.Column="2" Margin="8,0,0,0">
+                                                                            <TextBlock Text="Resolution" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,6"/>
+                                                                            <ComboBox x:Name="ResolutionBox" Style="{StaticResource DarkComboBoxStyle}"><ComboBoxItem Content="Full (native)" Tag="0"/><ComboBoxItem Content="1080p (recommended)" Tag="1080"/><ComboBoxItem Content="720p (lightest)" Tag="720"/></ComboBox>
+                                                                        </StackPanel>
+                                                                    </Grid>
+                                <StackPanel Margin="0,0,0,20" HorizontalAlignment="Left" Width="360">
+                                                                        <TextBlock Text="Clip size" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,6"/>
+                                                                        <ComboBox x:Name="ClipSizeBox" Style="{StaticResource DarkComboBoxStyle}">
+                                                                            <ComboBoxItem Content="Smaller files" Tag="small"/>
+                                                                            <ComboBoxItem Content="Balanced (recommended)" Tag="balanced"/>
+                                                                            <ComboBoxItem Content="Best quality (big files)" Tag="large"/>
+                                                                            <ComboBoxItem Content="No limit (very big files)" Tag="off"/>
+                                                                        </ComboBox>
+                                                                        <TextBlock Text="2 minutes at 1080p 60 FPS: about 110 MB on Smaller, 180 MB on Balanced, 320 MB on Best quality." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                                                    </StackPanel>
+                                <DockPanel Margin="0,0,0,2">
+                                                                        <TextBlock x:Name="ClipLengthValueText" DockPanel.Dock="Right" Text="90 seconds" FontSize="13" FontWeight="SemiBold"/>
+                                                                        <TextBlock Text="Clip length (how much is saved when you press the clip shortcut)" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+                                                                    </DockPanel>
+                                                                    <Slider x:Name="ClipLengthSlider" Style="{StaticResource DarkSlider}" Minimum="15" Maximum="180" TickFrequency="5" SmallChange="5" LargeChange="15" Value="90" ValueChanged="ClipLengthSlider_ValueChanged" Margin="0,0,0,14"/>
+                                <TextBlock x:Name="PerformanceStatusText" Text="Hardware encoding and 1080p capture are recommended while gaming." Foreground="#A1A1AA" FontSize="11" Margin="0,14,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                    <StackPanel x:Name="AudioTab" Visibility="Collapsed">
+                        <Border Style="{StaticResource Card}" Padding="22" Margin="0,0,0,14">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,12"><TextBlock Text="Sound" Style="{StaticResource SettingsHeading}" Margin="0"/><Button Content="Refresh devices" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Right" Click="RefreshAudioDevices_Click"/></Grid>
+                                <TextBlock Text="What sound to record" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,6"/>
+                                                                    <ComboBox x:Name="AudioSourceBox" Style="{StaticResource DarkComboBoxStyle}" Margin="0,0,0,6" SelectionChanged="AudioSource_Changed">
+                                                                        <ComboBoxItem Content="Game sound only (recommended)" Tag="game"/>
+                                                                        <ComboBoxItem Content="Everything playing on my PC" Tag="all"/>
+                                                                    </ComboBox>
+                                                                    <TextBlock Text="Game sound only keeps music, videos and calls out of your clips. It records Fortnite, or whatever game you have open full screen. Needs Windows 11; on older Windows, ClipShot records everything." Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                                                    <StackPanel x:Name="ExtraAudioOptions" Margin="0,0,0,16">
+                                                                        <CheckBox x:Name="DiscordAudioCheck" Content="Also record Discord" Foreground="White" Margin="0,0,0,8"
+                                                                                  ToolTip="Adds your Discord calls to clips. Your own voice is only included if you record your microphone below."/>
+                                                                        <TextBlock Text="Other apps to record (optional, for example Spotify.exe; separate with commas)" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                                                                        <TextBox x:Name="OtherAudioAppsBox" Style="{StaticResource InputStyle}"/>
+                                                                    </StackPanel>
+                                                                    <StackPanel><CheckBox x:Name="GameAudioCheck" Content="Record game sound" Foreground="White" FontWeight="SemiBold" Margin="0,0,0,8"/><TextBlock Text="Sound device for &quot;Everything playing on my PC&quot; (leave on Default unless you use another headset or speaker)" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/><ComboBox x:Name="GameAudioDeviceBox" Style="{StaticResource DarkComboBoxStyle}" IsEditable="False" ToolTip="The speakers or headset your game sound plays through."/></StackPanel>
+                                                                    <DockPanel Margin="0,18,0,2">
+                                                                        <TextBlock x:Name="VolumeValueText" DockPanel.Dock="Right" Text="100%" FontSize="13" FontWeight="SemiBold"/>
+                                                                        <TextBlock Text="Game volume" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+                                                                    </DockPanel>
+                                                                    <Slider x:Name="VolumeSlider" Style="{StaticResource DarkSlider}" Minimum="0" Maximum="200" TickFrequency="5" SmallChange="5" LargeChange="25" Value="100" ValueChanged="VolumeSlider_ValueChanged"
+                                                                            ToolTip="How loud the game is in saved clips. 100% is the same as in game."/>
+                                                                    <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,18,0,16"/>
+                                                                    <CheckBox x:Name="MicrophoneCheck" Content="Record my microphone" Foreground="White" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                                                                    <StackPanel x:Name="MicrophoneOptions" IsEnabled="{Binding IsChecked, ElementName=MicrophoneCheck}">
+                                                                        <StackPanel.Style>
+                                                                            <Style TargetType="StackPanel">
+                                                                                <Style.Triggers>
+                                                                                    <Trigger Property="IsEnabled" Value="False">
+                                                                                        <Setter Property="Opacity" Value="0.4"/>
+                                                                                    </Trigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </StackPanel.Style>
+                                                                        <TextBlock Text="Microphone" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,6"/>
+                                                                        <ComboBox x:Name="MicrophoneDeviceBox" Style="{StaticResource DarkComboBoxStyle}" IsEditable="False"/>
+                                                                        <DockPanel Margin="0,16,0,2">
+                                                                            <TextBlock x:Name="MicVolumeValueText" DockPanel.Dock="Right" Text="100%" FontSize="13" FontWeight="SemiBold"/>
+                                                                            <TextBlock Text="Microphone volume" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+                                                                        </DockPanel>
+                                                                        <Slider x:Name="MicVolumeSlider" Style="{StaticResource DarkSlider}" Minimum="0" Maximum="200" TickFrequency="5" SmallChange="5" LargeChange="25" Value="100" ValueChanged="VolumeSlider_ValueChanged"/>
+                                                                        <TextBlock Text="Your voice is mixed into the clip with the game sound. Windows may ask you to allow microphone access." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                                                                    </StackPanel>
+                                                                    <TextBlock x:Name="AudioDeviceStatusText" Text="Scanning Windows playback devices..." Foreground="#A1A1AA" FontSize="11" Margin="0,14,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                    <StackPanel x:Name="FortniteTab" Visibility="Collapsed">
+                        <Border Style="{StaticResource Card}" Padding="22" Margin="0,0,0,14">
+                            <StackPanel>
+                                <TextBlock Text="Trickshots" Style="{StaticResource SettingsHeading}"/>
+                                <CheckBox x:Name="LocalReplayCheck" Content="Check each match for trickshots automatically" Foreground="White" Margin="0,8,0,4"/>
+                                                                    <TextBlock Text="After a win, ClipShot checks the final kill and keeps the clip if it was a trickshot." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="22,0,0,5" TextWrapping="Wrap"/>
+                                <CheckBox x:Name="KeepRejectedCheck" Content="Keep clips that do not qualify" Foreground="White" Margin="0,4"/>
+                                <Border Height="12"/>
+                                <DockPanel Margin="0,0,0,2">
+                                                                        <TextBlock x:Name="PostMatchValueText" DockPanel.Dock="Right" Text="15 seconds" FontSize="13" FontWeight="SemiBold"/>
+                                                                        <TextBlock Text="After a win, keep recording for" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+                                                                    </DockPanel>
+                                                                    <Slider x:Name="PostMatchSlider" Style="{StaticResource DarkSlider}" Minimum="0" Maximum="60" TickFrequency="5" SmallChange="5" LargeChange="10" Value="15" ValueChanged="PostMatchSlider_ValueChanged"/>
+                                <Border Height="14"/>
+                                <CheckBox x:Name="TrickshotScreenshotCheck" Content="Save a screenshot of every trickshot automatically" Foreground="White" Margin="0,0,0,4"/>
+                                                                    <TextBlock Text="Saves one picture with the swag lines and one with the damage number." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="22,0,0,12" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource Card}" Padding="22" Margin="0,0,0,14">
+                            <StackPanel>
+                                <TextBlock Text="Recording" Style="{StaticResource SettingsHeading}"/>
+                                <CheckBox x:Name="FortniteOnlyCheck" Content="Only record while Fortnite is running" Foreground="White" Margin="0,4"/>
+                                                                    <TextBlock Text="Off: ClipShot records whatever you play." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="22,0,0,8" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                    <StackPanel x:Name="ShortcutsTab" Visibility="Collapsed">
+                        <Border Style="{StaticResource Card}" Padding="22" Margin="0,0,0,14">
+                            <StackPanel>
+                                <TextBlock Text="Keyboard shortcuts" Style="{StaticResource SettingsHeading}"/>
+                                <TextBlock Text="These work while you're in game." Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,14"/>
+                                <TextBlock Text="Manual clip shortcut" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/>
+                                                                    <Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="HotkeyBox" Style="{StaticResource InputStyle}" IsReadOnly="True"/><Button x:Name="HotkeyCaptureButton" Grid.Column="1" Content="Set shortcut" Style="{StaticResource SecondaryButton}" Click="CaptureHotkey_Click" Margin="10,0,0,0"/></Grid>
+                                                                    <TextBlock Text="Long recording shortcut (press once to start, again to stop)" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/>
+                                                                    <Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="LongHotkeyBox" Style="{StaticResource InputStyle}" IsReadOnly="True"/><Button x:Name="LongHotkeyCaptureButton" Grid.Column="1" Content="Set shortcut" Style="{StaticResource SecondaryButton}" Click="CaptureLongHotkey_Click" Margin="10,0,0,0"/></Grid>
+                                                                    <TextBlock Text="Screenshot shortcut" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/>
+                                                                    <Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="ShotHotkeyBox" Style="{StaticResource InputStyle}" IsReadOnly="True"/><Button x:Name="ShotHotkeyCaptureButton" Grid.Column="1" Content="Set shortcut" Style="{StaticResource SecondaryButton}" Click="CaptureShotHotkey_Click" Margin="10,0,0,0"/></Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                    <StackPanel x:Name="AdvancedTab" Visibility="Collapsed">
+                        <Border x:Name="AdvancedPanel" Style="{StaticResource Card}" Padding="22" Margin="0,0,0,14">
+                            <StackPanel>
+                                <TextBlock Text="Advanced" Style="{StaticResource SettingsHeading}" Margin="0,0,0,4"/>
+                                <TextBlock Text="Only change these if you know what they do. Optimize for my PC sets them for you." Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,16"/>
+                                <Grid>
+                                                                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                                                                        <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                                                                        <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,14">
+                                                                            <TextBlock Text="FFmpeg path (the bundled copy is detected automatically)" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/>
+                                                                            <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="FfmpegPathBox" Style="{StaticResource InputStyle}"/><Button Grid.Column="1" Content="Browse" Style="{StaticResource SecondaryButton}" Click="BrowseFfmpeg_Click" Margin="10,0,0,0"/><Button Grid.Column="2" Content="Auto configure" Style="{StaticResource SecondaryButton}" Click="AutoConfigureFfmpeg_Click" Margin="8,0,0,0"/></Grid>
+                                                                        </StackPanel>
+                                                                        <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,8,14"><TextBlock Text="Video encoder" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/><ComboBox x:Name="EncoderBox" Style="{StaticResource DarkComboBoxStyle}" SelectionChanged="EncoderSetting_Changed"><ComboBoxItem Content="CPU — H.264 (works everywhere)" Tag="libx264"/><ComboBoxItem Content="NVIDIA NVENC" Tag="h264_nvenc"/><ComboBoxItem Content="Windows Media Foundation" Tag="h264_mf"/><ComboBoxItem Content="AMD AMF" Tag="h264_amf"/><ComboBoxItem Content="Intel Quick Sync" Tag="h264_qsv"/></ComboBox></StackPanel>
+                                                                        <StackPanel Grid.Row="1" Grid.Column="1" Margin="8,0,0,14"><TextBlock Text="Frame rate (custom value)" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/><TextBox x:Name="FpsBox" Style="{StaticResource InputStyle}" TextChanged="FriendlySource_TextChanged"/></StackPanel>
+                                                                        <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Margin="0,0,0,14"><TextBlock Text="Encoder options (filled automatically; choose Quality → Custom to edit)" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/><TextBox x:Name="EncoderOptionsBox" Style="{StaticResource InputStyle}"/></StackPanel>
+                                                                        <StackPanel Grid.Row="3" Grid.Column="0" Margin="0,0,8,0"><TextBlock Text="Rolling buffer (seconds)" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/><TextBox x:Name="BufferBox" Style="{StaticResource InputStyle}"/></StackPanel>
+                                                                        <StackPanel Grid.Row="3" Grid.Column="1" Margin="8,0,0,0"><TextBlock Text="Segment length (seconds)" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/><TextBox x:Name="SegmentBox" Style="{StaticResource InputStyle}"/></StackPanel>
+                                                                        <StackPanel Grid.Row="4" Grid.Column="0" Margin="0,0,8,0" Visibility="Collapsed"><TextBlock Text="Clip length (seconds)" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/><TextBox x:Name="ClipLengthBox" Style="{StaticResource InputStyle}" TextChanged="FriendlySource_TextChanged"/></StackPanel>
+                                                                        <StackPanel Grid.Row="4" Grid.Column="1" Margin="8,0,0,0" Visibility="Collapsed"><TextBlock Text="Post-match footage (seconds)" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6"/><TextBox x:Name="PostMatchBox" Style="{StaticResource InputStyle}" TextChanged="FriendlySource_TextChanged"/></StackPanel>
+                                                                    </Grid>
+                                                                    <CheckBox x:Name="PrioritizeGameCheck" Content="Limit CPU encoder threads and priority (helps FPS with the CPU encoder)" Foreground="White" Margin="0,16,0,0"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Grid>
+                        </ScrollViewer>
+                        <Border Grid.Row="2" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="0,14,0,0">
+                            <StackPanel Orientation="Horizontal">
+                                <Button Content="Save settings" Padding="28,11" Style="{StaticResource PrimaryButton}" Click="SaveSettings_Click"/>
+                                <TextBlock Text="Recording changes apply the next time recording starts." Foreground="{StaticResource MutedBrush}" FontSize="12" VerticalAlignment="Center" Margin="14,0,0,0"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
                 </Grid>
             </Grid>
         </Grid>

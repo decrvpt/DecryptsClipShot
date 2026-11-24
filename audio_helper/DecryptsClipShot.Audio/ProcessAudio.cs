@@ -352,7 +352,11 @@ internal sealed class ProcessTable
 /// </summary>
 internal sealed class GameAudioTracker : IDisposable
 {
-    private const string Fortnite = "FortniteClient-Win64-Shipping.exe";
+    // Fortnite and revival projects (older builds): FortniteClient-Win64-Shipping.exe,
+    // its _EAC/_BE/_EAC_EOS variants and 32-bit builds all start this way.
+    private static bool IsFortnite(string exe) =>
+        exe.StartsWith("FortniteClient-Win", StringComparison.OrdinalIgnoreCase) &&
+        exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
     private static readonly HashSet<string> NotGames = new(StringComparer.OrdinalIgnoreCase)
     {
         "explorer.exe", "ApplicationFrameHost.exe", "ShellExperienceHost.exe", "StartMenuExperienceHost.exe",
@@ -385,10 +389,10 @@ internal sealed class GameAudioTracker : IDisposable
             current = null;
         }
 
-        int? candidate = table.FindRoot(Fortnite) ?? FullScreenApp(table);
+        int? candidate = FindFortnite(table) ?? FullScreenApp(table);
         if (candidate is null || candidate == current) return;
         // Fortnite stays the target while it runs.
-        if (current is int running && table.ExeOf(running).Equals(Fortnite, StringComparison.OrdinalIgnoreCase))
+        if (current is int running && IsFortnite(table.ExeOf(running)))
             return;
 
         Stop();
@@ -404,6 +408,18 @@ internal sealed class GameAudioTracker : IDisposable
             _capture = null;
             Console.Error.WriteLine($"Game sound: couldn't record {exe} ({exception.Message}).");
         }
+    }
+
+    // The game process itself, not a launcher stub: prefer the Shipping build
+    // that isn't the _EAC/_BE wrapper when both are running.
+    private static int? FindFortnite(ProcessTable table)
+    {
+        var matches = table.Entries.Where(entry => IsFortnite(entry.Exe)).ToList();
+        if (matches.Count == 0) return null;
+        var game = matches.FirstOrDefault(entry =>
+            !entry.Exe.Contains("_EAC", StringComparison.OrdinalIgnoreCase) &&
+            !entry.Exe.Contains("_BE", StringComparison.OrdinalIgnoreCase));
+        return (game.Exe is null ? matches[0] : game).Id;
     }
 
     private int? FullScreenApp(ProcessTable table)

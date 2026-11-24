@@ -84,6 +84,7 @@ typedef struct {
     int output_height;
     wchar_t clip_size[16]; /* small, balanced, large or off */
     wchar_t audio_source[16];        /* "game" (game sound only) or "all" (everything on the PC) */
+    wchar_t video_source[16];        /* "game" (only the game's window) or "screen" (the whole screen) */
     wchar_t extra_audio_apps[512];   /* with "game": other apps to record, e.g. "Discord.exe;Spotify.exe" */
     int other_apps_volume;
     int prioritize_game;
@@ -127,6 +128,10 @@ typedef struct {
        helpers, at the last report (for the per-minute resource line). */
     ULONGLONG last_cpu[3];
     double last_cpu_sample_ms;
+    /* Game-only video: the window being recorded (NULL = the whole screen). */
+    HWND capture_window;
+    HWND pending_window;      /* a new game window, waiting to be confirmed */
+    int pending_window_polls;
 } Recorder;
 
 typedef struct {
@@ -325,6 +330,8 @@ static void load_config(AppConfig *config)
                     config->clip_size, ARRAY_COUNT(config->clip_size));
     load_ini_string(ini, L"recording", L"audio_source", L"game",
                     config->audio_source, ARRAY_COUNT(config->audio_source));
+    load_ini_string(ini, L"recording", L"video_source", L"game",
+                    config->video_source, ARRAY_COUNT(config->video_source));
     load_ini_string(ini, L"recording", L"extra_audio_apps", L"",
                     config->extra_audio_apps, ARRAY_COUNT(config->extra_audio_apps));
     config->other_apps_volume = load_ini_int(ini, L"recording", L"other_apps_volume", 100);
@@ -633,25 +640,53 @@ static int parse_hotkey(const wchar_t *text, UINT *modifiers, UINT *virtual_key)
     return 1;
 }
 
-static int process_is_running(const wchar_t *name)
+/* Fortnite, including revival projects (older builds). Their program can be
+   FortniteClient-Win64-Shipping.exe, a _EAC/_BE/_EAC_EOS variant, or a 32-bit
+   build, so anything starting "FortniteClient-Win" counts. A renamed copy is
+   still caught by its window: Unreal's window class titled "Fortnite". */
+static int is_fortnite_exe(const wchar_t *exe)
+{
+    size_t length = wcslen(exe);
+    return _wcsnicmp(exe, L"FortniteClient-Win", 18) == 0 &&
+           length > 4 && _wcsicmp(exe + length - 4, L".exe") == 0;
+}
+
+static int is_fortnite_window(HWND window)
+{
+    wchar_t class_name[64], title[128];
+    if (!GetClassNameW(window, class_name, ARRAY_COUNT(class_name)) ||
+        _wcsicmp(class_name, L"UnrealWindow") != 0)
+        return 0;
+    if (!GetWindowTextW(window, title, ARRAY_COUNT(title))) return 0;
+    for (wchar_t *c = title; *c; c++) *c = towlower(*c);
+    return wcsstr(title, L"fortnite") != NULL;
+}
+
+static BOOL CALLBACK any_fortnite_window_proc(HWND window, LPARAM param)
+{
+    if (IsWindowVisible(window) && is_fortnite_window(window)) {
+        *(int *)param = 1;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static int fortnite_is_running(void)
 {
     PROCESSENTRY32W entry;
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     int found = 0;
-
-    if (snapshot == INVALID_HANDLE_VALUE) return 0;
-    ZeroMemory(&entry, sizeof(entry));
-    entry.dwSize = sizeof(entry);
-
-    if (Process32FirstW(snapshot, &entry)) {
-        do {
-            if (_wcsicmp(entry.szExeFile, name) == 0) {
-                found = 1;
-                break;
-            }
-        } while (Process32NextW(snapshot, &entry));
+    if (snapshot != INVALID_HANDLE_VALUE) {
+        ZeroMemory(&entry, sizeof(entry));
+        entry.dwSize = sizeof(entry);
+        if (Process32FirstW(snapshot, &entry)) {
+            do {
+                if (is_fortnite_exe(entry.szExeFile)) { found = 1; break; }
+            } while (Process32NextW(snapshot, &entry));
+        }
+        CloseHandle(snapshot);
     }
-    CloseHandle(snapshot);
+    if (!found) EnumWindows(any_fortnite_window_proc, (LPARAM)&found);
     return found;
 }
 
@@ -1122,7 +1157,17 @@ static int recorder_start_backend(Recorder *recorder, const AppConfig *config, i
     else if (recorder->audio_wanted)
         recorder->audio_failed_tick = GetTickCount64();
 
-    if (use_dxgi) {
+    if (use_dxgi && recorder->capture_window) {
+        /* Game-only video: Windows.Graphics.Capture records just the game's
+           window, so notifications, other windows and the desktop stay out
+           of clips. Like ddagrab it gives GPU frames, so the rest of the
+           chain is unchanged. */
+        swprintf_s(capture_args, ARRAY_COUNT(capture_args),
+                   L"-thread_queue_size %d -f lavfi -i "
+                   L"\"gfxcapture=hwnd=%llu:capture_cursor=0:display_border=0:max_framerate=%d\" ",
+                   CAPTURE_QUEUE_FRAMES, (unsigned long long)(ULONG_PTR)recorder->capture_window,
+                   config->framerate);
+    } else if (use_dxgi) {
         swprintf_s(capture_args, ARRAY_COUNT(capture_args),
                    L"-thread_queue_size %d -f lavfi -i "
                    L"\"ddagrab=output_idx=0:draw_mouse=0:framerate=%d:dup_frames=1\" ",
@@ -1146,14 +1191,15 @@ static int recorder_start_backend(Recorder *recorder, const AppConfig *config, i
     if (use_dxgi && config->output_height > 0) {
         swprintf_s(video_filter, ARRAY_COUNT(video_filter),
                    L"-vf \"fps=%d,hwdownload,format=bgra,"
-                   L"scale=-2:min(ih\\,%d):flags=fast_bilinear,"
+                   L"scale=-2:trunc(min(ih\\,%d)/2)*2:flags=fast_bilinear,"
                    L"format=yuv420p\" -fps_mode passthrough ",
                    config->framerate, config->output_height);
     } else if (use_dxgi) {
         swprintf_s(video_filter, ARRAY_COUNT(video_filter),
-                   L"-vf \"fps=%d,hwdownload,format=bgra,"
+                   L"-vf \"fps=%d,hwdownload,format=bgra,%ls"
                    L"format=yuv420p\" -fps_mode passthrough ",
-                   config->framerate);
+                   config->framerate,
+                   recorder->capture_window ? L"scale=trunc(iw/2)*2:trunc(ih/2)*2:flags=fast_bilinear," : L"");
     } else if (config->output_height > 0) {
         swprintf_s(video_filter, ARRAY_COUNT(video_filter),
                    L"-vf \"fps=%d,scale=-2:min(ih\\,%d):flags=fast_bilinear\" "
@@ -1289,7 +1335,8 @@ static int recorder_start_backend(Recorder *recorder, const AppConfig *config, i
             config->framerate, config->output_height,
             lower_priority ? L"below-normal" : L"normal");
     wprintf(L"RUNTIME|build=%ls|backend=%ls|encoder=%ls|fps=%d|segment=%d|buffer=%d|output_height=%d|pipeline=%ls\n",
-            ENGINE_BUILD, use_dxgi ? L"DXGI" : L"GDI", config->video_encoder,
+            ENGINE_BUILD, !use_dxgi ? L"GDI" : recorder->capture_window ? L"WINDOW" : L"DXGI",
+            config->video_encoder,
             config->framerate, config->segment_seconds, config->buffer_seconds,
             config->output_height, ENGINE_PIPELINE);
     fflush(stdout);
@@ -1321,10 +1368,149 @@ static void clear_buffer(const AppConfig *config)
     }
 }
 
+/* ---- Game-only video: finding the game's window ------------------------ */
+
+static void window_exe_name(HWND window, wchar_t *exe, DWORD exe_cap)
+{
+    DWORD pid = 0, size = exe_cap;
+    HANDLE process;
+    wchar_t path[PATH_CAP];
+    exe[0] = L'\0';
+    GetWindowThreadProcessId(window, &pid);
+    if (!pid) return;
+    process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!process) return;
+    size = ARRAY_COUNT(path);
+    if (QueryFullProcessImageNameW(process, 0, path, &size)) {
+        const wchar_t *slash = wcsrchr(path, L'\\');
+        wcscpy_s(exe, exe_cap, slash ? slash + 1 : path);
+    }
+    CloseHandle(process);
+}
+
+typedef struct {
+    HWND best;
+    LONGLONG best_area;
+} FortniteWindowSearch;
+
+static BOOL CALLBACK find_fortnite_window_proc(HWND window, LPARAM param)
+{
+    FortniteWindowSearch *search = (FortniteWindowSearch *)param;
+    wchar_t exe[MAX_PATH];
+    RECT rect;
+    LONGLONG area;
+    if (!IsWindowVisible(window) || GetWindow(window, GW_OWNER)) return TRUE;
+    window_exe_name(window, exe, ARRAY_COUNT(exe));
+    if ((!is_fortnite_exe(exe) && !is_fortnite_window(window)) || !GetWindowRect(window, &rect)) return TRUE;
+    area = (LONGLONG)(rect.right - rect.left) * (rect.bottom - rect.top);
+    if (area > search->best_area) {
+        search->best = window;
+        search->best_area = area;
+    }
+    return TRUE;
+}
+
+/* Fortnite's main window, or else the app open full screen in front, as long
+   as it isn't a browser, video player, chat app, the desktop or ClipShot. */
+static HWND find_game_window(void)
+{
+    static const wchar_t *const not_games[] = {
+        L"explorer.exe", L"ApplicationFrameHost.exe", L"ShellExperienceHost.exe",
+        L"StartMenuExperienceHost.exe", L"SearchHost.exe", L"LockApp.exe", L"TextInputHost.exe",
+        L"chrome.exe", L"msedge.exe", L"firefox.exe", L"opera.exe", L"brave.exe", L"vivaldi.exe",
+        L"Discord.exe", L"DiscordPTB.exe", L"DiscordCanary.exe", L"Spotify.exe",
+        L"vlc.exe", L"mpc-hc64.exe", L"mpc-hc.exe", L"wmplayer.exe", L"Video.UI.exe",
+        L"Microsoft.Media.Player.exe", L"obs64.exe", L"steamwebhelper.exe",
+        L"EpicGamesLauncher.exe", L"EpicWebHelper.exe", L"DecryptsClipShot.exe",
+        L"ClipShotEngine.exe", L"DecryptsClipShot.Audio.exe", L"ffmpeg.exe"
+    };
+    FortniteWindowSearch search = { NULL, 0 };
+    HWND window;
+    RECT rect;
+    MONITORINFO monitor;
+    wchar_t exe[MAX_PATH];
+    wchar_t own[PATH_CAP];
+    const wchar_t *own_name;
+
+    EnumWindows(find_fortnite_window_proc, (LPARAM)&search);
+    if (search.best && search.best_area >= 640 * 360) return search.best;
+
+    window = GetForegroundWindow();
+    if (!window || !IsWindowVisible(window) || IsIconic(window)) return NULL;
+    window_exe_name(window, exe, ARRAY_COUNT(exe));
+    if (!exe[0]) return NULL;
+    for (size_t i = 0; i < ARRAY_COUNT(not_games); i++)
+        if (_wcsicmp(exe, not_games[i]) == 0) return NULL;
+    GetModuleFileNameW(NULL, own, ARRAY_COUNT(own));
+    own_name = wcsrchr(own, L'\\');
+    if (_wcsicmp(exe, own_name ? own_name + 1 : own) == 0) return NULL;
+    if (!GetWindowRect(window, &rect)) return NULL;
+    ZeroMemory(&monitor, sizeof(monitor));
+    monitor.cbSize = sizeof(monitor);
+    if (!GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor)) return NULL;
+    if (rect.left > monitor.rcMonitor.left || rect.top > monitor.rcMonitor.top ||
+        rect.right < monitor.rcMonitor.right || rect.bottom < monitor.rcMonitor.bottom)
+        return NULL;
+    return window;
+}
+
+/* Called once a second in game-only video mode. Keeps recording the same
+   game while it's open (alt-tabbing doesn't switch away), moves to a new game
+   once it has been seen for 3 seconds (so launch splash screens don't cause
+   restarts), and goes back to the whole screen when the game closes.
+   Returns 1 when the recorder has to restart on a new target. */
+static int game_window_poll(Recorder *recorder, const AppConfig *config, HWND *new_target)
+{
+    HWND found;
+    if (_wcsicmp(config->video_source, L"game") != 0) return 0;
+    if (recorder->capture_window && !IsWindow(recorder->capture_window)) {
+        wprintf(L"Game closed; recording the whole screen.\n");
+        recorder->pending_window = NULL;
+        recorder->pending_window_polls = 0;
+        *new_target = NULL;
+        return 1;
+    }
+    found = find_game_window();
+    if (!found || found == recorder->capture_window) {
+        recorder->pending_window = NULL;
+        recorder->pending_window_polls = 0;
+        return 0;
+    }
+    /* Fortnite keeps the recording even if another full-screen app is in front. */
+    if (recorder->capture_window) {
+        wchar_t current_exe[MAX_PATH];
+        window_exe_name(recorder->capture_window, current_exe, ARRAY_COUNT(current_exe));
+        if (is_fortnite_exe(current_exe) || is_fortnite_window(recorder->capture_window)) return 0;
+    }
+    if (found != recorder->pending_window) {
+        recorder->pending_window = found;
+        recorder->pending_window_polls = 1;
+        return 0;
+    }
+    if (++recorder->pending_window_polls < 3) return 0;
+    {
+        wchar_t exe[MAX_PATH];
+        window_exe_name(found, exe, ARRAY_COUNT(exe));
+        wprintf(L"Game found: recording only %ls.\n", exe[0] ? exe : L"the game window");
+    }
+    recorder->pending_window = NULL;
+    recorder->pending_window_polls = 0;
+    *new_target = found;
+    return 1;
+}
+
 static int recorder_start(Recorder *recorder, const AppConfig *config)
 {
     int try_dxgi = _wcsicmp(config->capture_backend, L"gdi") != 0;
+    HWND window = recorder->capture_window;
     clear_buffer(config);
+    if (try_dxgi && window) {
+        if (recorder_start_backend(recorder, config, 1)) return 1;
+        /* Older Windows or an FFmpeg without window capture: record the
+           whole screen instead of nothing. */
+        wprintf(L"Game-only video isn't available here; recording the whole screen.\n");
+        recorder->capture_window = NULL;
+    }
     if (try_dxgi && recorder_start_backend(recorder, config, 1)) return 1;
     if (try_dxgi)
         wprintf(L"DXGI Desktop Duplication was unavailable; trying the GDI compatibility fallback.\n");
@@ -3676,7 +3862,7 @@ int wmain(int argc, wchar_t **argv)
     ensure_directory(config.buffer_dir);
     ensure_directory(config.clips_dir);
     ensure_directory(config.work_dir);
-    replay_watch_initialize(&watch, process_is_running(FORTNITE_PROCESS));
+    replay_watch_initialize(&watch, fortnite_is_running());
 
     ZeroMemory(&long_recording, sizeof(long_recording));
     sweep_pending_clips(&config);
@@ -3732,6 +3918,13 @@ int wmain(int argc, wchar_t **argv)
     wprintf(L"%ls saves a manual clip.\n", config.manual_hotkey);
     wprintf(L"Buffer directory: %ls\n", config.buffer_dir);
 
+    if (_wcsicmp(config.video_source, L"game") == 0) {
+        recorder.capture_window = find_game_window();
+        if (recorder.capture_window)
+            wprintf(L"Game found: recording only the game window.\n");
+        else
+            wprintf(L"No game open yet; recording the whole screen until one starts.\n");
+    }
     if (!config.start_only_with_fortnite) recorder_start(&recorder, &config);
 
     while (!InterlockedCompareExchange(&g_quit, 0, 0)) {
@@ -3767,10 +3960,14 @@ int wmain(int argc, wchar_t **argv)
         if (now - last_process_check >= 1000) {
             recorder_poll_audio(&recorder, &config);
             recorder_report_timing(&recorder);
-            int fortnite = process_is_running(FORTNITE_PROCESS);
+            int fortnite = fortnite_is_running();
             if (fortnite && !fortnite_previous) {
                 wprintf(L"Fortnite detected.\n");
-                if (config.start_only_with_fortnite) recorder_start(&recorder, &config);
+                if (config.start_only_with_fortnite) {
+                    if (_wcsicmp(config.video_source, L"game") == 0)
+                        recorder.capture_window = find_game_window();
+                    recorder_start(&recorder, &config);
+                }
             } else if (!fortnite && fortnite_previous) {
                 wprintf(L"Fortnite closed.\n");
                 if (config.start_only_with_fortnite) {
@@ -3781,6 +3978,29 @@ int wmain(int argc, wchar_t **argv)
             }
             fortnite_previous = fortnite;
             last_process_check = now;
+
+            /* Game-only video follows the game. Not while a trickshot clip is
+               waiting to be saved: restarting clears the buffer it needs. */
+            if (recorder.running && !automatic_clip_due) {
+                HWND target = NULL;
+                int restart = game_window_poll(&recorder, &config, &target);
+                if (!restart && recorder.capture_window &&
+                    WaitForSingleObject(recorder.process.hProcess, 0) == WAIT_OBJECT_0) {
+                    /* Window capture ended on its own (game minimized for a
+                       long time, display change). Start it again. */
+                    target = IsWindow(recorder.capture_window) ? recorder.capture_window : NULL;
+                    restart = 1;
+                }
+                if (restart) {
+                    if (long_recording.active) {
+                        wprintf(L"Long recording saved because the game changed.\n");
+                        long_record_stop(&config, &recorder, &long_recording);
+                    }
+                    recorder_stop(&recorder);
+                    recorder.capture_window = target;
+                    recorder_start(&recorder, &config);
+                }
+            }
         }
 
         if (now - last_replay_check >= 1000) {

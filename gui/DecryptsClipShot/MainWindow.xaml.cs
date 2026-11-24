@@ -141,8 +141,10 @@ public partial class MainWindow : Window
         if (defaultsVersion < 7) MigrateToDefaults7();
         if (defaultsVersion < 8) MigrateClipsToVideosFolder();
         // Version 9: ClipShot records any game; waiting for Fortnite became optional (off).
-        if (defaultsVersion < 9) WriteIni("app", "start_only_with_fortnite", "0");
-        WriteIni("app", "defaults_version", "9");
+        // Version 10 repeats it once: some installs still had it on, so recording
+        // never started without Fortnite. It can be turned back on in Settings → Fortnite.
+        if (defaultsVersion < 10) WriteIni("app", "start_only_with_fortnite", "0");
+        WriteIni("app", "defaults_version", "10");
     }
 
     // Version 8: clips moved from "<install folder>\clips" to Videos\Decrypt's ClipShot,
@@ -250,6 +252,7 @@ public partial class MainWindow : Window
         PrioritizeGameCheck.IsChecked = ReadIni("recording", "prioritize_game", "1") == "1";
         GameAudioCheck.IsChecked = ReadIni("recording", "capture_game_audio", "1") == "1";
         AudioSourceBox.SelectedIndex = ReadIni("recording", "audio_source", "game") == "all" ? 1 : 0;
+        VideoSourceBox.SelectedIndex = ReadIni("recording", "video_source", "game") == "screen" ? 1 : 0;
         DiscordAudioCheck.IsChecked = ReadIni("recording", "record_discord", "0") == "1";
         OtherAudioAppsBox.Text = ReadIni("recording", "other_audio_apps", "");
         ExtraAudioOptions.IsEnabled = AudioSourceBox.SelectedIndex == 0;
@@ -992,11 +995,22 @@ public partial class MainWindow : Window
             MicVolumeValueText.Text = MicVolumeSlider.Value == 0 ? "Muted" : $"{(int)MicVolumeSlider.Value}%";
     }
 
-    private void AdvancedToggle_Click(object sender, RoutedEventArgs e)
+    // Settings tabs: each button shows its own group of settings. All tabs
+    // stay loaded, so Save settings saves everything at once.
+    private void SettingsTab_Click(object sender, RoutedEventArgs e)
     {
-        bool show = AdvancedPanel.Visibility != Visibility.Visible;
-        AdvancedPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-        AdvancedToggle.Content = show ? "Hide advanced settings ▴" : "Show advanced settings ▾";
+        var tabs = new (System.Windows.Controls.Button Button, FrameworkElement Content)[]
+        {
+            (GeneralTabButton, GeneralTab), (RecordingTabButton, RecordingTab), (AudioTabButton, AudioTab),
+            (FortniteTabButton, FortniteTab), (ShortcutsTabButton, ShortcutsTab), (AdvancedTabButton, AdvancedTab)
+        };
+        foreach (var (button, content) in tabs)
+        {
+            bool open = ReferenceEquals(button, sender);
+            button.Tag = open ? "Active" : null;
+            content.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+        }
+        SettingsScroll.ScrollToTop();
     }
 
     /// <summary>Videos\Decrypt's ClipShot: where clips go unless the player picks another folder.</summary>
@@ -1207,6 +1221,7 @@ public partial class MainWindow : Window
         WriteIni("recording", "prioritize_game", PrioritizeGameCheck.IsChecked == true ? "1" : "0");
         WriteIni("recording", "capture_game_audio", GameAudioCheck.IsChecked == true ? "1" : "0");
         WriteIni("recording", "audio_source", ComboValue(AudioSourceBox, "game"));
+        WriteIni("recording", "video_source", ComboValue(VideoSourceBox, "game"));
         WriteIni("recording", "record_discord", DiscordAudioCheck.IsChecked == true ? "1" : "0");
         WriteIni("recording", "other_audio_apps", OtherAudioAppsBox.Text.Trim());
         WriteIni("recording", "extra_audio_apps", ExtraAudioApps(DiscordAudioCheck.IsChecked == true, OtherAudioAppsBox.Text));
